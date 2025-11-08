@@ -1,6 +1,5 @@
 import type { Context } from "hono"
 import type { User } from "@supabase/supabase-js"
-import type { Response } from "hono"
 import { supabase } from "./supabase"
 
 type AuthResult = User | Response
