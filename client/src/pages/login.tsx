@@ -1,29 +1,88 @@
 import type React from "react"
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useNavigate } from "react-router-dom"
 import { useAuth } from "../../lib/auth/context"
 import { Button } from "../../components/ui/button"
 import { Input } from "../../components/ui/input"
 import { Label } from "../../components/ui/label"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card"
+import { apiGet } from "../../lib/api-client"
+import { supabase } from "../../lib/supabase/client"
 
 export default function LoginPage() {
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [isLoading, setIsLoading] = useState(false)
-  const { signIn } = useAuth()
+  const [error, setError] = useState<string | null>(null)
+  const { signIn, user, isLoading: authLoading } = useAuth()
   const navigate = useNavigate()
+
+  // Redirect if already logged in
+  useEffect(() => {
+    if (!authLoading && user) {
+      // User is already logged in, fetch calendars and redirect
+      apiGet<Array<{ id: string; name: string; slug: string; color: string; createdAt: string }>>(
+        "/api/calendars"
+      )
+        .then((calendars) => {
+          if (calendars && calendars.length > 0) {
+            navigate(`/${calendars[0].slug}/calendar`, { replace: true })
+          } else {
+            navigate("/default/settings", { replace: true })
+          }
+        })
+        .catch(() => {
+          // If fetching calendars fails, just navigate to a default route
+          navigate("/default/settings", { replace: true })
+        })
+    }
+  }, [user, authLoading, navigate])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setIsLoading(true)
+    setError(null)
 
     try {
-      await signIn(email, password)
-      navigate("/")
+      // Sign in - this will update the session
+      const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      })
+
+      if (signInError) {
+        throw signInError
+      }
+
+      if (!signInData.session) {
+        throw new Error("No session returned from sign in")
+      }
+
+      // Wait a brief moment for the session to be persisted
+      await new Promise((resolve) => setTimeout(resolve, 100))
+
+      // Verify session is available
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession()
+      
+      if (sessionError || !session) {
+        throw new Error("Failed to establish session")
+      }
+
+      // Fetch user's calendars
+      const calendars = await apiGet<Array<{ id: string; name: string; slug: string; color: string; createdAt: string }>>(
+        "/api/calendars"
+      )
+
+      // Navigate to the first calendar, or to a default route if no calendars exist
+      if (calendars && calendars.length > 0) {
+        navigate(`/${calendars[0].slug}/calendar`, { replace: true })
+      } else {
+        // If no calendars, navigate to settings to create one
+        navigate("/default/settings", { replace: true })
+      }
     } catch (error: any) {
       console.error("Login error:", error)
-      alert(error.message || "Failed to login")
+      setError(error.message || "Failed to login")
     } finally {
       setIsLoading(false)
     }
@@ -59,6 +118,7 @@ export default function LoginPage() {
                 required
               />
             </div>
+            {error && <p className="text-sm text-red-500">{error}</p>}
             <Button type="submit" className="w-full" disabled={isLoading}>
               {isLoading ? "Signing in..." : "Sign in"}
             </Button>

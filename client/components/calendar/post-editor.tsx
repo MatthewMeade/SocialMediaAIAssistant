@@ -139,7 +139,15 @@ export function PostEditor({
   onClose,
   brandRules,
 }: PostEditorProps) {
-  const [editedPost, setEditedPost] = useState<Post>(post)
+  // Normalize date when initializing
+  const normalizeDate = (date: Date | string): Date => {
+    return date instanceof Date ? date : new Date(date)
+  }
+  
+  const [editedPost, setEditedPost] = useState<Post>({
+    ...post,
+    date: normalizeDate(post.date),
+  })
   const [currentImageIndex, setCurrentImageIndex] = useState(0)
   const [newComment, setNewComment] = useState("")
   const [showBrandScore, setShowBrandScore] = useState(false)
@@ -158,7 +166,12 @@ export function PostEditor({
   const lastLocalUpdateRef = useRef<number>(Date.now())
 
   useEffect(() => {
-    setEditedPost(post)
+    // Normalize the date to ensure it's a Date object
+    const normalizedPost = {
+      ...post,
+      date: normalizeDate(post.date),
+    }
+    setEditedPost(normalizedPost)
     setBrandScore(calculateBrandScore(post.caption, brandRules))
   }, [post, brandRules])
 
@@ -238,12 +251,13 @@ export function PostEditor({
     setShowMediaPicker(false)
   }
 
-  const formatDateTimeForInput = (date: Date) => {
-    const year = date.getFullYear()
-    const month = String(date.getMonth() + 1).padStart(2, "0")
-    const day = String(date.getDate()).padStart(2, "0")
-    const hours = String(date.getHours()).padStart(2, "0")
-    const minutes = String(date.getMinutes()).padStart(2, "0")
+  const formatDateTimeForInput = (date: Date | string) => {
+    const dateObj = normalizeDate(date)
+    const year = dateObj.getFullYear()
+    const month = String(dateObj.getMonth() + 1).padStart(2, "0")
+    const day = String(dateObj.getDate()).padStart(2, "0")
+    const hours = String(dateObj.getHours()).padStart(2, "0")
+    const minutes = String(dateObj.getMinutes()).padStart(2, "0")
     return `${year}-${month}-${day}T${hours}:${minutes}`
   }
 
@@ -347,7 +361,7 @@ export function PostEditor({
     return "bg-red-500"
   }
 
-  const isPastDate = editedPost.date < new Date()
+  const isPastDate = normalizeDate(editedPost.date) < new Date()
   const isAuthor = currentUser.id === editedPost.authorId
 
   const getStatusBadge = () => {
@@ -487,11 +501,14 @@ export function PostEditor({
     }
 
     // Check if the post has actually changed
+    const postDate = post.date instanceof Date ? post.date : new Date(post.date)
+    const editedPostDate = editedPost.date instanceof Date ? editedPost.date : new Date(editedPost.date)
+    
     if (
       post.caption !== editedPost.caption ||
       post.platform !== editedPost.platform ||
       post.status !== editedPost.status ||
-      post.date.getTime() !== editedPost.date.getTime() ||
+      postDate.getTime() !== editedPostDate.getTime() ||
       JSON.stringify(post.images) !== JSON.stringify(editedPost.images)
     ) {
       console.log("[v0] Received remote update for post")

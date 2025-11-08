@@ -8,7 +8,8 @@ interface PostItemProps {
 }
 
 export function PostItem({ post, onClick }: PostItemProps) {
-  const time = post.date.toLocaleTimeString("en-US", {
+  const postDate = post.date instanceof Date ? post.date : new Date(post.date)
+  const time = postDate.toLocaleTimeString("en-US", {
     hour: "numeric",
     minute: "2-digit",
     hour12: true,

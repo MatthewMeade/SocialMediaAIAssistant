@@ -23,6 +23,23 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>
 }
 
+function RootRedirect() {
+  const { user, isLoading } = useAuth()
+
+  if (isLoading) {
+    return <div className="flex h-screen items-center justify-center">Loading...</div>
+  }
+
+  if (!user) {
+    return <Navigate to="/login" replace />
+  }
+
+  // If user is authenticated, fetch calendars and redirect to first calendar
+  // This will be handled by the login page's redirect logic if needed
+  // For now, redirect to a default calendar route
+  return <Navigate to="/default/calendar" replace />
+}
+
 export default function App() {
   return (
     <Routes>
@@ -41,7 +58,7 @@ export default function App() {
         <Route path="profile" element={<ProfilePage />} />
         <Route path="settings" element={<SettingsPage />} />
       </Route>
-      <Route path="/" element={<Navigate to="/login" replace />} />
+      <Route path="/" element={<RootRedirect />} />
     </Routes>
   )
 }

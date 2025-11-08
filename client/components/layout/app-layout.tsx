@@ -7,17 +7,31 @@ import { apiGet } from "../../lib/api-client"
 export default function AppLayout() {
   const { calendarSlug } = useParams()
 
-  const { data: calendars, isLoading } = useQuery({
+  const { data: calendars, isLoading, error } = useQuery({
     queryKey: ["calendars"],
     queryFn: async () => {
       return apiGet<Array<{ id: string; name: string; slug: string; color: string; createdAt: string }>>(
         "/api/calendars",
       )
     },
+    retry: 1,
   })
 
   if (isLoading) {
     return <div className="flex h-screen items-center justify-center">Loading...</div>
+  }
+
+  if (error) {
+    return (
+      <div className="flex h-screen items-center justify-center">
+        <div className="text-center">
+          <p className="text-destructive mb-2">Error loading calendars</p>
+          <p className="text-sm text-muted-foreground">
+            {error instanceof Error ? error.message : "Unknown error"}
+          </p>
+        </div>
+      </div>
+    )
   }
 
   if (!calendars || calendars.length === 0) {
