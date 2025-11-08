@@ -2,8 +2,9 @@ import { supabase } from "./supabase/client"
 
 /**
  * API client utility that automatically adds authentication tokens to requests
+ * Supports AbortController for request cancellation
  */
-export async function apiFetch(url: string, options: RequestInit = {}): Promise<Response> {
+export async function apiFetch(url: string, options: RequestInit & { signal?: AbortSignal } = {}): Promise<Response> {
   // Get the current session
   const { data: { session } } = await supabase.auth.getSession()
 
@@ -74,11 +75,17 @@ export async function apiGet<T>(url: string): Promise<T> {
 /**
  * Helper for POST requests
  * Supports both JSON and FormData
+ * Supports AbortController for request cancellation via signal option
  */
-export async function apiPost<T>(url: string, body?: unknown | FormData): Promise<T> {
+export async function apiPost<T>(
+  url: string,
+  body?: unknown | FormData,
+  options?: { signal?: AbortSignal }
+): Promise<T> {
   const response = await apiFetch(url, {
     method: "POST",
     body: body instanceof FormData ? body : body ? JSON.stringify(body) : undefined,
+    signal: options?.signal,
   })
   if (!response.ok) {
     const error = await response.json().catch(() => ({ error: "Unknown error" }))

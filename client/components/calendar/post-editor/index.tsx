@@ -215,13 +215,16 @@ export function PostEditor({
             />
           )}
 
-          {showBrandScore && brandScore && (
+          {showBrandScore && brandScore && editedPost.calendarId && (
             <div className="w-80 border-l border-border bg-card flex flex-col min-h-0">
               <BrandScorePanel
-                score={brandScore}
-                isLoading={isFetchingScore}
-                onApplySuggestions={handleApplySuggestions}
-                onClose={() => setShowBrandScore(false)}
+                {...({
+                  score: brandScore,
+                  calendarId: editedPost.calendarId,
+                  isLoading: isFetchingScore,
+                  onApplySuggestions: handleApplySuggestions,
+                  onClose: () => setShowBrandScore(false),
+                } as React.ComponentProps<typeof BrandScorePanel>)}
               />
             </div>
           )}

@@ -24,7 +24,7 @@ app.post('/grade-caption', async (c) => {
 
   const { caption, calendarId } = await c.req.json()
 
-  if (!caption || !calendarId) {
+  if (typeof caption !== 'string' || !calendarId) {
     return c.json({ error: 'caption and calendarId are required' }, 400)
   }
 
