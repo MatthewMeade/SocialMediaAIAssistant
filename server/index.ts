@@ -1,4 +1,6 @@
-import "dotenv/config"
+// CRITICAL: Load environment variables FIRST before any other imports
+import "./load-env"
+
 import { serve } from "@hono/node-server"
 import { Hono } from "hono"
 import { cors } from "hono/cors"
@@ -6,9 +8,6 @@ import { logger } from "hono/logger"
 import postsRouter from "./routes/posts"
 import calendarsRouter from "./routes/calendars"
 import brandVoiceRouter from "./routes/brand-voice"
-// import mediaRouter from "./routes/media"
-// import uploadRouter from "./routes/upload"
-// import profileRouter from "./routes/profile"
 import authRouter from "./routes/auth"
 
 const app = new Hono()
@@ -31,9 +30,6 @@ app.route("/api/auth", authRouter)
 app.route("/api/posts", postsRouter)
 app.route("/api/calendars", calendarsRouter)
 app.route("/api/brand-voice", brandVoiceRouter)
-// app.route("/api/media", mediaRouter)
-// app.route("/api/upload", uploadRouter)
-// app.route("/api/profile", profileRouter)
 
 const port = Number(process.env.PORT) || 3001
 

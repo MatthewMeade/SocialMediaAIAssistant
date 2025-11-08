@@ -1,19 +1,23 @@
 import { createClient as createSupabaseClient } from "@supabase/supabase-js"
 
-if (!process.env.SUPABASE_URL) {
-  throw new Error("Missing SUPABASE_URL")
-}
-
-if (!process.env.SUPABASE_ANON_KEY) {
-  throw new Error("Missing SUPABASE_ANON_KEY")
+function getEnvVar(name: string): string {
+  const value = process.env[name]
+  if (!value) {
+    throw new Error(`Missing ${name}`)
+  }
+  return value
 }
 
 export function createClient() {
-  return createSupabaseClient(process.env.SUPABASE_URL!, process.env.SUPABASE_ANON_KEY!, {
-    auth: {
-      autoRefreshToken: false,
-      persistSession: false,
+  return createSupabaseClient(
+    getEnvVar("SUPABASE_URL"),
+    getEnvVar("SUPABASE_ANON_KEY"),
+    {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false,
+      },
     },
-  })
+  )
 }
 
