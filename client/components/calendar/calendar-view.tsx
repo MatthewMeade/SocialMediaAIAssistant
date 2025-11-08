@@ -113,7 +113,6 @@ export function CalendarView({ currentUser, calendarId, calendarSlug, postToOpen
           onSave={handleSavePost}
           onDelete={handleDeletePost}
           onClose={handleCloseEditor}
-          brandRules={[]}
         />
       )}
     </div>

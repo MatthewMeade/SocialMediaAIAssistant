@@ -1,8 +1,16 @@
 import { Hono } from "hono"
-import { requireAuth, isUser } from "../lib/auth"
+import type { User } from "@supabase/supabase-js"
+import { requireAuth } from "../lib/auth"
 import { supabase } from "../lib/supabase"
 
-const app = new Hono()
+type Variables = {
+  authResult: User
+}
+
+const app = new Hono<{ Variables: Variables }>()
+
+// Middleware to load and validate user
+app.use('*', requireAuth)
 
 function generateSlug(name: string): string {
   return name
@@ -12,11 +20,7 @@ function generateSlug(name: string): string {
 }
 
 app.get("/", async (c) => {
-  const authResult = await requireAuth(c)
-  if (!isUser(authResult)) {
-    return authResult
-  }
-  const user = authResult
+  const user = c.get('authResult')
 
   const { data: calendars, error } = await supabase
     .from("calendars")
@@ -43,11 +47,7 @@ app.get("/", async (c) => {
 })
 
 app.post("/", async (c) => {
-  const authResult = await requireAuth(c)
-  if (!isUser(authResult)) {
-    return authResult
-  }
-  const user = authResult
+  const user = c.get('authResult')
 
   const body = await c.req.json()
   const { name, color } = body

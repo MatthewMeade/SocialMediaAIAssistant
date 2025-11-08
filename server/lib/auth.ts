@@ -1,14 +1,18 @@
-import type { Context } from "hono"
+import type { Context, Next } from "hono"
 import type { User } from "@supabase/supabase-js"
 import { supabase } from "./supabase"
 
 type AuthResult = User | Response
 
+type Variables = {
+  authResult: User
+}
+
 export function isUser(result: AuthResult): result is User {
   return result !== null && typeof result === "object" && "id" in result && !("status" in result)
 }
 
-export async function requireAuth(c: Context): Promise<AuthResult> {
+export async function requireAuth(c: Context<{ Variables: Variables }>, next: Next): Promise<Response | void> {
   const authHeader = c.req.header("Authorization")
 
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
@@ -26,7 +30,8 @@ export async function requireAuth(c: Context): Promise<AuthResult> {
     return c.json({ error: "Unauthorized" }, 401)
   }
 
-  return user
+  c.set('authResult', user)
+  await next()
 }
 
 export async function canAccessCalendar(userId: string, calendarId: string): Promise<boolean> {

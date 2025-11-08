@@ -21,5 +21,5 @@
       "@/*": ["./client/*"]
     }
   },
-  "include": ["client/**/*", "shared/**/*", "client/vite-env.d.ts"]
+  "include": ["client/**/*", "shared/**/*", "client/vite-env.d.ts", "server/**/*"]
 }

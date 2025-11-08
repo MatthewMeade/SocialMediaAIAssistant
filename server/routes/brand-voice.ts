@@ -1,14 +1,22 @@
 import { Hono } from "hono"
+import type { User } from "@supabase/supabase-js"
 import { requireAuth, isUser, canAccessCalendar } from "../lib/auth"
 import { supabase } from "../lib/supabase"
 import { getBrandRules, saveBrandRule, deleteBrandRule } from "../lib/db/brand-voice"
 
-const app = new Hono()
+type Variables = {
+  authResult: User
+}
+
+const app = new Hono<{ Variables: Variables }>()
+
+// Middleware to load and validate user
+app.use('*', requireAuth)
 
 app.get("/", async (c) => {
-  const authResult = await requireAuth(c)
+  const authResult = c.get('authResult')
   if (!isUser(authResult)) {
-    return authResult
+    return c.json({ error: 'Unauthorized' }, 401)
   }
   const user = authResult
 
@@ -28,9 +36,9 @@ app.get("/", async (c) => {
 })
 
 app.post("/", async (c) => {
-  const authResult = await requireAuth(c)
+  const authResult = c.get('authResult')
   if (!isUser(authResult)) {
-    return authResult
+    return c.json({ error: 'Unauthorized' }, 401)
   }
   const user = authResult
 
@@ -62,9 +70,9 @@ app.post("/", async (c) => {
 })
 
 app.put("/", async (c) => {
-  const authResult = await requireAuth(c)
+  const authResult = c.get('authResult')
   if (!isUser(authResult)) {
-    return authResult
+    return c.json({ error: 'Unauthorized' }, 401)
   }
   const user = authResult
 
@@ -96,9 +104,9 @@ app.put("/", async (c) => {
 })
 
 app.delete("/", async (c) => {
-  const authResult = await requireAuth(c)
+  const authResult = c.get('authResult')
   if (!isUser(authResult)) {
-    return authResult
+    return c.json({ error: 'Unauthorized' }, 401)
   }
   const user = authResult
 

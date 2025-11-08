@@ -1,13 +1,21 @@
 import { Hono } from "hono"
+import type { User } from "@supabase/supabase-js"
 import { requireAuth, isUser } from "../lib/auth"
 import { updateProfile, type ProfileUpdate } from "../lib/db/profiles"
 
-const app = new Hono()
+type Variables = {
+  authResult: User
+}
+
+const app = new Hono<{ Variables: Variables }>()
+
+// Middleware to load and validate user
+app.use('*', requireAuth)
 
 app.put("/", async (c) => {
-  const authResult = await requireAuth(c)
+  const authResult = c.get('authResult')
   if (!isUser(authResult)) {
-    return authResult
+    return c.json({ error: 'Unauthorized' }, 401)
   }
   const user = authResult
 
