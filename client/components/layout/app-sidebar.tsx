@@ -5,7 +5,6 @@ import {
   ImageIcon,
   ChevronLeft,
   ChevronRight,
-  Bell,
   LogOut,
   Settings,
   Sparkles,
@@ -238,12 +237,6 @@ export function AppSidebar({ calendars, currentCalendar }: AppSidebarProps) {
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
-
-              <div className="relative shrink-0">
-                <Button variant="ghost" size="icon" className="h-9 w-9">
-                  <Bell className="h-4 w-4" />
-                </Button>
-              </div>
             </div>
           ) : (
             <div className="flex flex-col items-center gap-2">
@@ -279,12 +272,6 @@ export function AppSidebar({ calendars, currentCalendar }: AppSidebarProps) {
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
-
-              <div className="relative shrink-0">
-                <Button variant="ghost" size="icon" className="h-9 w-9">
-                  <Bell className="h-4 w-4" />
-                </Button>
-              </div>
             </div>
           )}
         </div>

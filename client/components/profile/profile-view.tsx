@@ -1,7 +1,7 @@
 import type React from "react"
 
 import { useState, useEffect } from "react"
-import { User, Bell, Lock, Palette, Save, Upload } from "lucide-react"
+import { User, Lock, Palette, Save, Upload } from "lucide-react"
 import { useTheme } from "next-themes"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -13,7 +13,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Separator } from "@/components/ui/separator"
 import { createClient } from "@/lib/supabase/client"
-import { apiGet, apiPost, apiPut } from "@/lib/api-client"
+import { apiPost, apiPut } from "@/lib/api-client"
 import { useToast } from "@/hooks/use-toast"
 
 interface ProfileViewProps {
@@ -34,15 +34,6 @@ export function ProfileView({ currentUser }: ProfileViewProps) {
     avatar_url: "",
     timezone: "America/New_York",
     language: "en",
-  })
-
-  const [notifications, setNotifications] = useState({
-    email_notifications: true,
-    push_notifications: true,
-    post_reminders: true,
-    weekly_reports: false,
-    new_messages: true,
-    new_comments: true,
   })
 
   const [appearance, setAppearance] = useState({
@@ -67,12 +58,6 @@ export function ProfileView({ currentUser }: ProfileViewProps) {
           avatar_url: string | null
           timezone: string | null
           language: string | null
-          email_notifications: boolean | null
-          push_notifications: boolean | null
-          post_reminders: boolean | null
-          weekly_reports: boolean | null
-          new_messages: boolean | null
-          new_comments: boolean | null
           theme: string | null
           compact_mode: boolean | null
         }
@@ -83,14 +68,6 @@ export function ProfileView({ currentUser }: ProfileViewProps) {
           avatar_url: profileData.avatar_url || "",
           timezone: profileData.timezone || "America/New_York",
           language: profileData.language || "en",
-        })
-        setNotifications({
-          email_notifications: profileData.email_notifications ?? true,
-          push_notifications: profileData.push_notifications ?? true,
-          post_reminders: profileData.post_reminders ?? true,
-          weekly_reports: profileData.weekly_reports ?? false,
-          new_messages: profileData.new_messages ?? true,
-          new_comments: profileData.new_comments ?? true,
         })
         setAppearance({
           theme: profileData.theme || theme || "system",
@@ -116,26 +93,6 @@ export function ProfileView({ currentUser }: ProfileViewProps) {
       toast({
         title: "Error",
         description: "Failed to save profile. Please try again.",
-        variant: "destructive",
-      })
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  const handleSaveNotifications = async () => {
-    setSaving(true)
-    try {
-      await apiPut("/api/profile", notifications)
-
-      toast({
-        title: "Notifications saved",
-        description: "Your notification preferences have been updated.",
-      })
-    } catch (error) {
-      toast({
-        title: "Error",
-        description: "Failed to save notifications. Please try again.",
         variant: "destructive",
       })
     } finally {
@@ -320,106 +277,6 @@ export function ProfileView({ currentUser }: ProfileViewProps) {
               <Button onClick={handleSaveProfile} disabled={saving} className="gap-2">
                 <Save className="h-4 w-4" />
                 {saving ? "Saving..." : "Save Profile"}
-              </Button>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Bell className="h-5 w-5" />
-                Notifications
-              </CardTitle>
-              <CardDescription>Manage how you receive notifications</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <div className="space-y-0.5">
-                    <Label htmlFor="email-notifications">Email Notifications</Label>
-                    <p className="text-sm text-muted-foreground">Receive notifications via email</p>
-                  </div>
-                  <Switch
-                    id="email-notifications"
-                    checked={notifications.email_notifications}
-                    onCheckedChange={(checked) => setNotifications({ ...notifications, email_notifications: checked })}
-                  />
-                </div>
-
-                <Separator />
-
-                <div className="flex items-center justify-between">
-                  <div className="space-y-0.5">
-                    <Label htmlFor="push-notifications">Push Notifications</Label>
-                    <p className="text-sm text-muted-foreground">Receive push notifications in your browser</p>
-                  </div>
-                  <Switch
-                    id="push-notifications"
-                    checked={notifications.push_notifications}
-                    onCheckedChange={(checked) => setNotifications({ ...notifications, push_notifications: checked })}
-                  />
-                </div>
-
-                <Separator />
-
-                <div className="flex items-center justify-between">
-                  <div className="space-y-0.5">
-                    <Label htmlFor="post-reminders">Post Reminders</Label>
-                    <p className="text-sm text-muted-foreground">Get reminders for scheduled posts</p>
-                  </div>
-                  <Switch
-                    id="post-reminders"
-                    checked={notifications.post_reminders}
-                    onCheckedChange={(checked) => setNotifications({ ...notifications, post_reminders: checked })}
-                  />
-                </div>
-
-                <Separator />
-
-                <div className="flex items-center justify-between">
-                  <div className="space-y-0.5">
-                    <Label htmlFor="weekly-reports">Weekly Reports</Label>
-                    <p className="text-sm text-muted-foreground">Receive weekly performance reports</p>
-                  </div>
-                  <Switch
-                    id="weekly-reports"
-                    checked={notifications.weekly_reports}
-                    onCheckedChange={(checked) => setNotifications({ ...notifications, weekly_reports: checked })}
-                  />
-                </div>
-
-                <Separator />
-
-                <div className="flex items-center justify-between">
-                  <div className="space-y-0.5">
-                    <Label htmlFor="new-messages">New Messages</Label>
-                    <p className="text-sm text-muted-foreground">Notify when you receive new messages</p>
-                  </div>
-                  <Switch
-                    id="new-messages"
-                    checked={notifications.new_messages}
-                    onCheckedChange={(checked) => setNotifications({ ...notifications, new_messages: checked })}
-                  />
-                </div>
-
-                <Separator />
-
-                <div className="flex items-center justify-between">
-                  <div className="space-y-0.5">
-                    <Label htmlFor="new-comments">New Comments</Label>
-                    <p className="text-sm text-muted-foreground">Notify when you receive new comments</p>
-                  </div>
-                  <Switch
-                    id="new-comments"
-                    checked={notifications.new_comments}
-                    onCheckedChange={(checked) => setNotifications({ ...notifications, new_comments: checked })}
-                  />
-                </div>
-              </div>
-
-              <Button onClick={handleSaveNotifications} disabled={saving} className="gap-2">
-                <Save className="h-4 w-4" />
-                {saving ? "Saving..." : "Save Notifications"}
               </Button>
             </CardContent>
           </Card>

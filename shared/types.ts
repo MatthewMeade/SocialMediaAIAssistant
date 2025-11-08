@@ -59,17 +59,6 @@ export interface Comment {
   createdAt: Date
 }
 
-export interface Notification {
-  id: string
-  userId: string
-  calendarId: string // Added calendar scope
-  type: "post_approved" | "post_rejected" | "comment_added" | "post_state_changed"
-  message: string
-  postId: string
-  read: boolean
-  createdAt: Date
-}
-
 export interface BrandRule {
   id: string
   calendarId: string // Added calendar scope

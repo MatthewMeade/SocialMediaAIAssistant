@@ -73,11 +73,6 @@ export function CalendarView({ currentUser, calendarId, calendarSlug, postToOpen
 
     if (post.id) {
       await updatePost.mutateAsync(post)
-
-      if (oldPost && oldPost.status !== post.status) {
-        // Notification logic can be added here if needed
-      }
-
       setSelectedPost(post)
     } else {
       const newPost = await createPost.mutateAsync(post)

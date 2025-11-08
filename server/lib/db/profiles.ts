@@ -7,12 +7,6 @@ export interface ProfileUpdate {
   avatar_url?: string
   timezone?: string
   language?: string
-  email_notifications?: boolean
-  push_notifications?: boolean
-  post_reminders?: boolean
-  weekly_reports?: boolean
-  new_messages?: boolean
-  new_comments?: boolean
   theme?: string
   compact_mode?: boolean
 }
