@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useNavigate, useLocation, useParams } from "react-router-dom"
 import {
   Calendar,
@@ -13,7 +13,7 @@ import {
   Plus,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Avatar } from "@/components/ui/avatar"
+import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar"
 import { cn } from "@/lib/utils"
 import {
   DropdownMenu,
@@ -25,6 +25,7 @@ import {
 import { createClient } from "@/lib/supabase/client"
 import { CreateCalendarDialog } from "@/components/settings/create-calendar-dialog"
 import { apiPost } from "@/lib/api-client"
+import { useAuth } from "@/lib/auth/context"
 
 interface AppSidebarProps {
   calendars: Array<{
@@ -53,6 +54,42 @@ export function AppSidebar({ calendars, currentCalendar }: AppSidebarProps) {
   const { calendarSlug } = useParams()
   const [isCollapsed, setIsCollapsed] = useState(false)
   const [showCreateCalendar, setShowCreateCalendar] = useState(false)
+  const { user } = useAuth()
+  const [userProfile, setUserProfile] = useState<{
+    name: string
+    email: string
+    avatar_url: string | null
+  } | null>(null)
+
+  useEffect(() => {
+    const loadUserProfile = async () => {
+      if (!user) return
+
+      const supabase = createClient()
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("name, email, avatar_url")
+        .eq("id", user.id)
+        .single()
+
+      if (profile) {
+        setUserProfile({
+          name: profile.name || user.user_metadata?.name || user.email?.split("@")[0] || "User",
+          email: profile.email || user.email || "",
+          avatar_url: profile.avatar_url,
+        })
+      } else {
+        // Fallback to auth user data if profile doesn't exist
+        setUserProfile({
+          name: user.user_metadata?.name || user.email?.split("@")[0] || "User",
+          email: user.email || "",
+          avatar_url: null,
+        })
+      }
+    }
+
+    loadUserProfile()
+  }, [user])
 
   const currentSection = location.pathname.split("/").pop() || "calendar"
 
@@ -173,12 +210,19 @@ export function AppSidebar({ calendars, currentCalendar }: AppSidebarProps) {
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <button className="flex flex-1 items-center gap-3 rounded-lg px-3 py-2 text-left transition-colors hover:bg-accent">
-                    <Avatar className="h-8 w-8 shrink-0 bg-primary/10 flex items-center justify-center">
-                      <span className="text-sm font-medium text-primary">U</span>
+                    <Avatar className="h-8 w-8 shrink-0">
+                      <AvatarImage src={userProfile?.avatar_url || undefined} />
+                      <AvatarFallback className="bg-primary/10 text-primary">
+                        {userProfile?.name?.[0]?.toUpperCase() || "U"}
+                      </AvatarFallback>
                     </Avatar>
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-foreground truncate">User</p>
-                      <p className="text-xs text-muted-foreground truncate">user@example.com</p>
+                      <p className="text-sm font-medium text-foreground truncate">
+                        {userProfile?.name || "User"}
+                      </p>
+                      <p className="text-xs text-muted-foreground truncate">
+                        {userProfile?.email || "user@example.com"}
+                      </p>
                     </div>
                   </button>
                 </DropdownMenuTrigger>
@@ -206,15 +250,22 @@ export function AppSidebar({ calendars, currentCalendar }: AppSidebarProps) {
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button variant="ghost" size="icon" className="h-9 w-9 shrink-0">
-                    <Avatar className="h-7 w-7 bg-primary/10 flex items-center justify-center">
-                      <span className="text-xs font-medium text-primary">U</span>
+                    <Avatar className="h-7 w-7">
+                      <AvatarImage src={userProfile?.avatar_url || undefined} />
+                      <AvatarFallback className="bg-primary/10 text-primary">
+                        {userProfile?.name?.[0]?.toUpperCase() || "U"}
+                      </AvatarFallback>
                     </Avatar>
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-56">
                   <div className="px-2 py-1.5">
-                    <p className="text-sm font-medium text-foreground">User</p>
-                    <p className="text-xs text-muted-foreground">user@example.com</p>
+                    <p className="text-sm font-medium text-foreground">
+                      {userProfile?.name || "User"}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {userProfile?.email || "user@example.com"}
+                    </p>
                   </div>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem onClick={() => calendarSlug && navigate(`/${calendarSlug}/profile`)}>
