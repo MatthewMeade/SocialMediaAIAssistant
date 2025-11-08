@@ -1,15 +1,13 @@
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
+import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { X, Sparkles, Check } from "lucide-react"
 import { Card } from "@/components/ui/card"
 import { useMutation } from "@tanstack/react-query"
 import { apiPost } from "@/lib/api-client"
 import type {
   CaptionGenerationResult,
-  GeneratedCaption,
 } from "@/lib/types"
 import { Spinner } from "@/components/ui/spinner"
 import { cn } from "@/lib/utils"
@@ -35,15 +33,14 @@ export function CaptionGeneratorPanel({
   onApplyCaption,
   onClose,
 }: CaptionGeneratorPanelProps) {
-  const [topic, setTopic] = useState("")
-  const [keywords, setKeywords] = useState("")
-  const [tone, setTone] = useState("professional")
-  const [generatedCaptions, setGeneratedCaptions] = useState<GeneratedCaption[]>([])
-  const [selectedCaption, setSelectedCaption] = useState<string | null>(null)
+  const [userInput, setUserInput] = useState("")
+  const [generatedCaption, setGeneratedCaption] = useState<string | null>(null)
+  const [captionScore, setCaptionScore] = useState<CaptionGenerationResult["score"]>(null)
 
+  // Mutation for generating new captions
   const {
     mutate: generate,
-    isPending,
+    isPending: isGenerating,
   } = useMutation({
     mutationFn: (request: CaptionRequest) =>
       apiPost<CaptionGenerationResult>("/api/ai/generate-caption", {
@@ -51,28 +48,69 @@ export function CaptionGeneratorPanel({
         request,
       }),
     onSuccess: (result) => {
-      setGeneratedCaptions(result.captions)
-      setSelectedCaption(result.bestCaption)
+      setGeneratedCaption(result.caption)
+      setCaptionScore(result.score)
     },
     onError: (error) => {
-      console.error("Error generating captions:", error)
-      // You could set an error state here
+      console.error("Error generating caption:", error)
+    },
+  })
+
+  // Mutation for applying suggestions to existing caption
+  const {
+    mutate: applySuggestions,
+    isPending: isApplying,
+  } = useMutation({
+    mutationFn: (data: {
+      caption: string
+      suggestions: string[]
+      calendarId: string
+    }) =>
+      apiPost<{ newCaption: string }>("/api/ai/apply-suggestions", data),
+    onSuccess: (result) => {
+      setGeneratedCaption(result.newCaption)
+      setCaptionScore(null) // No score returned from apply-suggestions
+    },
+    onError: (error) => {
+      console.error("Error applying suggestions:", error)
     },
   })
 
   const handleGenerate = () => {
-    const requestData: CaptionRequest = {
-      topic,
-      keywords: keywords.split(",").filter((k) => k.trim()),
-      tone,
-      existingCaption: existingCaption || undefined,
+    if (existingCaption) {
+      // Use apply-suggestions API when there's an existing caption
+      // Convert user input into suggestions array
+      const suggestions = userInput
+        .split(/\n|,/)
+        .map((s) => s.trim())
+        .filter((s) => s.length > 0)
+      
+      // If user didn't provide suggestions, use a default one
+      if (suggestions.length === 0) {
+        suggestions.push("Improve the caption")
+      }
+
+      applySuggestions({
+        caption: existingCaption,
+        suggestions,
+        calendarId,
+      })
+    } else {
+      // Use generate-caption API for new captions
+      const requestData: CaptionRequest = {
+        topic: userInput,
+        keywords: [],
+        tone: "professional",
+      }
+      generate(requestData)
     }
-    generate(requestData)
   }
 
+  const isPending = isGenerating || isApplying
+
   const handleApply = () => {
-    if (selectedCaption) {
-      onApplyCaption(selectedCaption)
+    if (generatedCaption) {
+      onApplyCaption(generatedCaption)
       onClose()
     }
   }
@@ -83,7 +121,7 @@ export function CaptionGeneratorPanel({
         <div className="flex items-center gap-2">
           <Sparkles className="h-5 w-5 text-primary" />
           <h3 className="text-sm font-semibold text-foreground">
-            {existingCaption ? "Refine Caption" : "Caption Generator"}
+            Caption Generator
           </h3>
         </div>
         <Button variant="ghost" size="icon" onClick={onClose} className="h-8 w-8">
@@ -94,47 +132,22 @@ export function CaptionGeneratorPanel({
       <div className="flex-1 overflow-y-auto p-4 space-y-4 min-h-0">
         <div className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="topic" className="text-xs">
-              What's your post about? {existingCaption && "(Optional)"}
+            <Label htmlFor="user-input" className="text-xs">
+              {existingCaption
+                ? "What would you like to change?"
+                : "What's your post about?"}
             </Label>
-            <Input
-              id="topic"
-              placeholder="e.g., New product launch, Company milestone..."
-              value={topic}
-              onChange={(e) => setTopic(e.target.value)}
-              className="h-9"
+            <Textarea
+              id="user-input"
+              placeholder={
+                existingCaption
+                  ? "e.g., Make it more professional, Add a call to action, Shorten the length..."
+                  : "e.g., New product launch, Company milestone..."
+              }
+              value={userInput}
+              onChange={(e) => setUserInput(e.target.value)}
+              className="min-h-24 resize-none"
             />
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="keywords" className="text-xs">
-              Keywords (comma separated) {existingCaption && "(Optional)"}
-            </Label>
-            <Input
-              id="keywords"
-              placeholder="e.g., innovation, quality, customer-focused"
-              value={keywords}
-              onChange={(e) => setKeywords(e.target.value)}
-              className="h-9"
-            />
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="tone" className="text-xs">
-              Tone
-            </Label>
-            <Select value={tone} onValueChange={setTone}>
-              <SelectTrigger id="tone" className="h-9">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="professional">Professional</SelectItem>
-                <SelectItem value="casual">Casual</SelectItem>
-                <SelectItem value="enthusiastic">Enthusiastic</SelectItem>
-                <SelectItem value="informative">Informative</SelectItem>
-                <SelectItem value="inspirational">Inspirational</SelectItem>
-              </SelectContent>
-            </Select>
           </div>
 
           <Button
@@ -149,17 +162,19 @@ export function CaptionGeneratorPanel({
               <Sparkles className="h-4 w-4" />
             )}
             {isPending
-              ? "Generating..."
+              ? existingCaption
+                ? "Applying changes..."
+                : "Generating..."
               : existingCaption
-                ? "Refine Caption"
-                : "Generate Captions"}
+                ? "Apply Changes"
+                : "Generate Caption"}
           </Button>
         </div>
 
-        {(isPending || generatedCaptions.length > 0) && (
+        {(isPending || generatedCaption) && (
           <div className="space-y-3 pt-4 border-t border-border">
             <h4 className="text-xs font-semibold text-foreground">
-              Generated Captions
+              {existingCaption ? "Updated Caption" : "Generated Caption"}
             </h4>
             {isPending && (
               <Card className="p-3 space-y-2 animate-pulse">
@@ -167,53 +182,32 @@ export function CaptionGeneratorPanel({
                 <div className="h-4 bg-muted rounded w-1/2"></div>
               </Card>
             )}
-            {generatedCaptions.map((captionData, index) => (
-              <Card
-                key={index}
-                className={cn(
-                  "p-3 cursor-pointer transition-all",
-                  selectedCaption === captionData.caption
-                    ? "border-primary bg-primary/5"
-                    : "hover:border-primary/50",
-                )}
-                onClick={() => setSelectedCaption(captionData.caption)}
-              >
+            {generatedCaption && (
+              <Card className="p-3">
                 <div className="flex items-start gap-3">
-                  <div
-                    className={cn(
-                      "mt-0.5 h-4 w-4 rounded-full border-2 flex items-center justify-center shrink-0",
-                      selectedCaption === captionData.caption
-                        ? "border-primary bg-primary"
-                        : "border-muted-foreground",
-                    )}
-                  >
-                    {selectedCaption === captionData.caption && (
-                      <Check className="h-3 w-3 text-primary-foreground" />
-                    )}
-                  </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-xs text-foreground whitespace-pre-wrap leading-relaxed">
-                      {captionData.caption}
+                      {generatedCaption}
                     </p>
                   </div>
-                  {captionData.score && (
+                  {captionScore && (
                     <div
                       className={cn(
-                        "text-xs font-bold px-1.5 py-0.5 rounded-full",
-                        getScoreColor(captionData.score.overall),
+                        "text-xs font-bold px-1.5 py-0.5 rounded-full shrink-0",
+                        getScoreColor(captionScore.overall),
                       )}
                     >
-                      {captionData.score.overall}%
+                      {captionScore.overall}%
                     </div>
                   )}
                 </div>
               </Card>
-            ))}
+            )}
           </div>
         )}
       </div>
 
-      {selectedCaption && (
+      {generatedCaption && (
         <div className="border-t border-border p-4 shrink-0">
           <Button onClick={handleApply} className="w-full gap-2" size="sm">
             <Check className="h-4 w-4" />

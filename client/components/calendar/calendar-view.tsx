@@ -69,13 +69,13 @@ export function CalendarView({ currentUser, calendarId, calendarSlug, postToOpen
   }
 
   const handleSavePost = async (post: Post) => {
-    const oldPost = posts.find((p: Post) => p.id === post.id)
-
-    if (post.id) {
+    if (post.id && post.id !== "") {
       await updatePost.mutateAsync(post)
       setSelectedPost(post)
     } else {
-      const newPost = await createPost.mutateAsync(post)
+      // For new posts, omit the id field
+      const { id, ...postWithoutId } = post
+      const newPost = await createPost.mutateAsync(postWithoutId)
       setSelectedPost(newPost)
     }
   }

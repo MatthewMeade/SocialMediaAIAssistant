@@ -84,6 +84,10 @@ export function PostEditor({
       }) => apiPost<{ newCaption: string }>("/api/ai/apply-suggestions", data),
       onSuccess: (data) => {
         handleUpdate({ caption: data.newCaption })
+        // Trigger brand score fetch for the updated caption
+        if (editedPost.calendarId) {
+          fetchScoreIfNeeded(data.newCaption, editedPost.calendarId)
+        }
       },
       onError: (error) => {
         console.error("Error applying suggestions:", error)
@@ -221,7 +225,7 @@ export function PostEditor({
             />
           </div>
 
-          {!showBrandScore && (
+          {!showBrandScore && !showCaptionGenerator && (
             <PostSidebar
               post={editedPost}
               currentUser={currentUser}
@@ -243,20 +247,26 @@ export function PostEditor({
               />
             </div>
           )}
+
+          {showCaptionGenerator && editedPost.calendarId && (
+            <div className="w-80 border-l border-border bg-card flex flex-col min-h-0">
+              <CaptionGeneratorPanel
+                calendarId={editedPost.calendarId}
+                existingCaption={editedPost.caption}
+                onApplyCaption={(caption) => {
+                  handleUpdate({ caption })
+                  // Trigger brand score fetch for the new caption
+                  if (editedPost.calendarId) {
+                    fetchScoreIfNeeded(caption, editedPost.calendarId)
+                  }
+                  setShowCaptionGenerator(false)
+                }}
+                onClose={() => setShowCaptionGenerator(false)}
+              />
+            </div>
+          )}
         </div>
       </div>
-
-      {showCaptionGenerator && (
-        <CaptionGeneratorPanel
-          calendarId={editedPost.calendarId}
-          existingCaption={editedPost.caption}
-          onApplyCaption={(caption) => {
-            handleUpdate({ caption })
-            setShowCaptionGenerator(false)
-          }}
-          onClose={() => setShowCaptionGenerator(false)}
-        />
-      )}
     </div>
   )
 }

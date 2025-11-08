@@ -83,8 +83,8 @@ export interface GeneratedCaption {
 }
 
 export interface CaptionGenerationResult {
-  captions: GeneratedCaption[]
-  bestCaption: string
+  caption: string
+  score: BrandScore | null
 }
 
 export interface MediaItem {

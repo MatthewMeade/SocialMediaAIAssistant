@@ -4,8 +4,7 @@ import type { BrandRule } from '../../../shared/types'
 import type {
   BrandScore,
   CaptionGenerationRequest,
-  CaptionGenerationResult,
-  GeneratedCaption,
+    CaptionGenerationResult,
 } from '../schemas'
 
 // Helper function to extract text from message content
@@ -93,6 +92,7 @@ type GraderFunction = (
  * - If existingCaption is provided, it refines that.
  * - If not, it generates a new one.
  * - It then grades the caption. If it's below a threshold, it refines it once.
+ * - Returns only the best single caption.
  */
 export async function generateCaptions(
   request: CaptionGenerationRequest,
@@ -109,8 +109,8 @@ export async function generateCaptions(
 
   const refinementChain = refinementPromptTemplate.pipe(creativeModel)
 
-  const drafts: GeneratedCaption[] = []
   let initialCaption: string
+    let initialScore: BrandScore
 
   const keywords = request.keywords.join(', ')
 
@@ -128,16 +128,15 @@ export async function generateCaptions(
   }
 
   // 2. Evaluate Initial Caption
-  const score1 = await graderFunc(initialCaption, brandRules)
-  drafts.push({ caption: initialCaption, score: score1 })
+    initialScore = await graderFunc(initialCaption, brandRules)
 
   // 3. Reflect & Refine (if needed)
-  if (score1.overall < 85 && brandRules.length > 0) {
+    if (initialScore.overall < 85 && brandRules.length > 0) {
     // Score is low, refine it once
     const feedback = `
-      Overall Score: ${score1.overall}/100.
-      Suggestions: ${score1.suggestions.join(', ')}
-      Rules Violated: ${score1.rules
+      Overall Score: ${initialScore.overall}/100.
+      Suggestions: ${initialScore.suggestions.join(', ')}
+      Rules Violated: ${initialScore.rules
         .filter((r) => r.score < 70)
         .map((r) => r.feedback)
         .join(', ')}
@@ -153,17 +152,21 @@ export async function generateCaptions(
     const refinedCaption = extractTextFromMessage(result)
 
     // 4. Evaluate Refined Caption
-    const score2 = await graderFunc(refinedCaption, brandRules)
-    drafts.push({ caption: refinedCaption, score: score2 })
+        const refinedScore = await graderFunc(refinedCaption, brandRules)
+
+        // 5. Return the best caption (highest score)
+        if (refinedScore.overall > initialScore.overall) {
+            return {
+                caption: refinedCaption,
+                score: refinedScore,
+            }
+        }
   }
 
-  // 5. Return Results
-  // Sort by score, highest first
-  drafts.sort((a, b) => (b.score?.overall ?? 0) - (a.score?.overall ?? 0))
-
+    // Return the initial caption (either it was good enough or refinement didn't help)
   return {
-    captions: drafts,
-    bestCaption: drafts[0].caption,
+      caption: initialCaption,
+      score: initialScore,
   }
 }
 

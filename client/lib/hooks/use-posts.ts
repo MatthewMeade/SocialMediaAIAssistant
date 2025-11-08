@@ -15,7 +15,12 @@ export function usePosts(calendarId: string) {
 
   const createMutation = useMutation({
     mutationFn: async (post: Omit<Post, "id">) => {
-      return apiPost<Post>("/api/posts", post)
+      // Serialize the date to ISO string for the API
+      const postToSend = {
+        ...post,
+        date: post.date instanceof Date ? post.date.toISOString() : post.date,
+      }
+      return apiPost<Post>("/api/posts", postToSend)
     },
     onMutate: async (newPost) => {
       await queryClient.cancelQueries({ queryKey: ["posts", calendarId] })
@@ -50,7 +55,12 @@ export function usePosts(calendarId: string) {
 
   const updateMutation = useMutation({
     mutationFn: async (post: Post) => {
-      return apiPut<Post>("/api/posts", post)
+      // Serialize the date to ISO string for the API
+      const postToSend = {
+        ...post,
+        date: post.date instanceof Date ? post.date.toISOString() : post.date,
+      }
+      return apiPut<Post>("/api/posts", postToSend)
     },
     onMutate: async (updatedPost) => {
       await queryClient.cancelQueries({ queryKey: ["posts", calendarId] })
