@@ -1,17 +1,18 @@
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
+import { Spinner } from "@/components/ui/spinner"
 import { CheckCircle, XCircle, AlertCircle, Sparkles, X } from "lucide-react"
-import type { BrandScore, BrandRule } from "@/lib/types"
+import type { BrandScore } from "@/lib/types"
 import { cn } from "@/lib/utils"
 
 interface BrandScorePanelProps {
   score: BrandScore
-  rules: BrandRule[]
+  isLoading?: boolean
   onApplySuggestions: () => void
   onClose: () => void
 }
 
-export function BrandScorePanel({ score, rules, onApplySuggestions, onClose }: BrandScorePanelProps) {
+export function BrandScorePanel({ score, isLoading = false, onApplySuggestions, onClose }: BrandScorePanelProps) {
   const getScoreIcon = (ruleScore: number) => {
     if (ruleScore >= 80) return <CheckCircle className="h-4 w-4 text-green-600" />
     if (ruleScore >= 50) return <AlertCircle className="h-4 w-4 text-yellow-600" />
@@ -31,7 +32,15 @@ export function BrandScorePanel({ score, rules, onApplySuggestions, onClose }: B
   }
 
   return (
-    <div className="flex flex-col h-full min-h-0">
+    <div className="flex flex-col h-full min-h-0 relative">
+      {isLoading && (
+        <div className="absolute inset-0 bg-background/80 backdrop-blur-sm z-50 flex items-center justify-center">
+          <div className="flex flex-col items-center gap-3">
+            <Spinner className="h-6 w-6 text-primary" />
+            <p className="text-sm text-muted-foreground">Analyzing brand voice...</p>
+          </div>
+        </div>
+      )}
       <div className="p-4 border-b border-border shrink-0">
         <div className="flex items-center justify-between mb-3">
           <h3 className="text-sm font-semibold text-foreground">Brand Voice Analysis</h3>
@@ -94,16 +103,12 @@ export function BrandScorePanel({ score, rules, onApplySuggestions, onClose }: B
       <div className="flex-1 overflow-y-auto p-4 space-y-3 min-h-0">
         <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Rule Breakdown</h4>
         {score.rules.map((ruleScore) => {
-          const rule = rules.find((r) => r.id === ruleScore.ruleId)
-          if (!rule) return null
-
           return (
             <Card key={ruleScore.ruleId} className={cn("p-3 space-y-2", getScoreBgColor(ruleScore.score))}>
               <div className="flex items-start justify-between gap-2">
                 <div className="flex items-start gap-2 flex-1 min-w-0">
                   {getScoreIcon(ruleScore.score)}
                   <div className="flex-1 min-w-0">
-                    <h5 className="text-sm font-medium text-foreground">{rule.title}</h5>
                     <p className="text-xs text-muted-foreground mt-1">{ruleScore.feedback}</p>
                   </div>
                 </div>
