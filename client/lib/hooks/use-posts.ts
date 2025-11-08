@@ -21,12 +21,21 @@ export function usePosts(calendarId: string) {
       await queryClient.cancelQueries({ queryKey: ["posts", calendarId] })
       const previousPosts = queryClient.getQueryData<Post[]>(["posts", calendarId])
 
+      const tempId = `temp-${Date.now()}`
       queryClient.setQueryData<Post[]>(["posts", calendarId], (old = []) => [
         ...old,
-        { ...newPost, id: `temp-${Date.now()}` } as Post,
+        { ...newPost, id: tempId } as Post,
       ])
 
-      return { previousPosts }
+      return { previousPosts, tempId }
+    },
+    onSuccess: (newPost, _variables, context) => {
+      // Replace the temp post with the real one
+      queryClient.setQueryData<Post[]>(["posts", calendarId], (old = []) => {
+        if (!old) return [newPost]
+        // Remove temp post and add the real one
+        return old.filter((p) => p.id !== context?.tempId).concat(newPost)
+      })
     },
     onError: (_err, _newPost, context) => {
       if (context?.previousPosts) {
@@ -34,6 +43,7 @@ export function usePosts(calendarId: string) {
       }
     },
     onSettled: () => {
+      // Still invalidate to ensure we have the latest data
       queryClient.invalidateQueries({ queryKey: ["posts", calendarId] })
     },
   })

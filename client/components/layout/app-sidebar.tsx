@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react"
 import { useNavigate, useLocation, useParams } from "react-router-dom"
+import { useQueryClient } from "@tanstack/react-query"
 import {
   Calendar,
   ImageIcon,
@@ -51,6 +52,7 @@ export function AppSidebar({ calendars, currentCalendar }: AppSidebarProps) {
   const navigate = useNavigate()
   const location = useLocation()
   const { calendarSlug } = useParams()
+  const queryClient = useQueryClient()
   const [isCollapsed, setIsCollapsed] = useState(false)
   const [showCreateCalendar, setShowCreateCalendar] = useState(false)
   const { user } = useAuth()
@@ -109,6 +111,9 @@ export function AppSidebar({ calendars, currentCalendar }: AppSidebarProps) {
         data,
       )
 
+      // Invalidate calendars query to refresh the list
+      await queryClient.invalidateQueries({ queryKey: ["calendars"] })
+      
       navigate(`/${newCalendar.slug}/calendar`)
     } catch (error) {
       console.error("Error creating calendar:", error)
