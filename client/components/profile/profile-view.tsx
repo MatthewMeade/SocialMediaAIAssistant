@@ -1,5 +1,3 @@
-import type React from "react"
-
 import { useState, useEffect } from "react"
 import { User, Lock, Palette, Save, Upload } from "lucide-react"
 import { useTheme } from "next-themes"
@@ -24,7 +22,8 @@ export function ProfileView({ currentUser }: ProfileViewProps) {
   const { toast } = useToast()
   const { theme, setTheme } = useTheme()
   const [loading, setLoading] = useState(true)
-  const [saving, setSaving] = useState(false)
+  const [savingProfile, setSavingProfile] = useState(false)
+  const [savingAppearance, setSavingAppearance] = useState(false)
   const [uploadingAvatar, setUploadingAvatar] = useState(false)
 
   const [profile, setProfile] = useState({
@@ -43,45 +42,58 @@ export function ProfileView({ currentUser }: ProfileViewProps) {
 
   useEffect(() => {
     const loadProfile = async () => {
-      const supabase = createClient()
-      const { data } = await supabase
-        .from("profiles")
-        .select("*")
-        .eq("id", currentUser.id)
-        .single()
+      try {
+        const supabase = createClient()
+        const { data, error } = await supabase
+          .from("profiles")
+          .select("*")
+          .eq("id", currentUser.id)
+          .single()
 
-      if (data && typeof data === 'object') {
-        const profileData = data as {
-          name: string
-          email: string
-          bio: string | null
-          avatar_url: string | null
-          timezone: string | null
-          language: string | null
-          theme: string | null
-          compact_mode: boolean | null
+        if (error && error.code !== 'PGRST116') { // PGRST116 is "not found" which is OK for new users
+          console.error("Error loading profile:", error)
         }
-        setProfile({
-          name: profileData.name || currentUser.name,
-          email: profileData.email || currentUser.email,
-          bio: profileData.bio || "",
-          avatar_url: profileData.avatar_url || "",
-          timezone: profileData.timezone || "America/New_York",
-          language: profileData.language || "en",
-        })
-        setAppearance({
-          theme: profileData.theme || theme || "system",
-          compact_mode: profileData.compact_mode || false,
-        })
+
+        if (data && typeof data === 'object') {
+          const profileData = data as {
+            name: string
+            email: string
+            bio: string | null
+            avatar_url: string | null
+            timezone: string | null
+            language: string | null
+            theme: string | null
+            compact_mode: boolean | null
+          }
+          setProfile({
+            name: profileData.name || currentUser.name,
+            email: profileData.email || currentUser.email,
+            bio: profileData.bio || "",
+            avatar_url: profileData.avatar_url || "",
+            timezone: profileData.timezone || "America/New_York",
+            language: profileData.language || "en",
+          })
+          setAppearance({
+            theme: profileData.theme || theme || "system",
+            compact_mode: profileData.compact_mode || false,
+          })
+          // Apply theme if it's different from current
+          if (profileData.theme && profileData.theme !== theme) {
+            setTheme(profileData.theme)
+          }
+        }
+      } catch (error) {
+        console.error("Error loading profile:", error)
+      } finally {
+        setLoading(false)
       }
-      setLoading(false)
     }
 
     loadProfile()
-  }, [currentUser.id, currentUser.name, currentUser.email, theme])
+  }, [currentUser.id, currentUser.name, currentUser.email, theme, setTheme])
 
   const handleSaveProfile = async () => {
-    setSaving(true)
+    setSavingProfile(true)
     try {
       await apiPut("/api/profile", profile)
 
@@ -90,18 +102,19 @@ export function ProfileView({ currentUser }: ProfileViewProps) {
         description: "Your profile has been updated successfully.",
       })
     } catch (error) {
+      console.error("Error saving profile:", error)
       toast({
         title: "Error",
-        description: "Failed to save profile. Please try again.",
+        description: error instanceof Error ? error.message : "Failed to save profile. Please try again.",
         variant: "destructive",
       })
     } finally {
-      setSaving(false)
+      setSavingProfile(false)
     }
   }
 
   const handleSaveAppearance = async () => {
-    setSaving(true)
+    setSavingAppearance(true)
     try {
       setTheme(appearance.theme)
       await apiPut("/api/profile", appearance)
@@ -111,13 +124,14 @@ export function ProfileView({ currentUser }: ProfileViewProps) {
         description: "Your appearance preferences have been updated.",
       })
     } catch (error) {
+      console.error("Error saving appearance:", error)
       toast({
         title: "Error",
-        description: "Failed to save appearance. Please try again.",
+        description: error instanceof Error ? error.message : "Failed to save appearance. Please try again.",
         variant: "destructive",
       })
     } finally {
-      setSaving(false)
+      setSavingAppearance(false)
     }
   }
 
@@ -274,9 +288,9 @@ export function ProfileView({ currentUser }: ProfileViewProps) {
                 </div>
               </div>
 
-              <Button onClick={handleSaveProfile} disabled={saving} className="gap-2">
+              <Button onClick={handleSaveProfile} disabled={savingProfile} className="gap-2">
                 <Save className="h-4 w-4" />
-                {saving ? "Saving..." : "Save Profile"}
+                {savingProfile ? "Saving..." : "Save Profile"}
               </Button>
             </CardContent>
           </Card>
@@ -324,9 +338,9 @@ export function ProfileView({ currentUser }: ProfileViewProps) {
                 </div>
               </div>
 
-              <Button onClick={handleSaveAppearance} disabled={saving} className="gap-2">
+              <Button onClick={handleSaveAppearance} disabled={savingAppearance} className="gap-2">
                 <Save className="h-4 w-4" />
-                {saving ? "Saving..." : "Save Appearance"}
+                {savingAppearance ? "Saving..." : "Save Appearance"}
               </Button>
             </CardContent>
           </Card>

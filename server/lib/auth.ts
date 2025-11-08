@@ -1,7 +1,15 @@
 import type { Context } from "hono"
+import type { User } from "@supabase/supabase-js"
+import type { Response } from "hono"
 import { supabase } from "./supabase"
 
-export async function requireAuth(c: Context) {
+type AuthResult = User | Response
+
+export function isUser(result: AuthResult): result is User {
+  return result !== null && typeof result === "object" && "id" in result && !("status" in result)
+}
+
+export async function requireAuth(c: Context): Promise<AuthResult> {
   const authHeader = c.req.header("Authorization")
 
   if (!authHeader || !authHeader.startsWith("Bearer ")) {

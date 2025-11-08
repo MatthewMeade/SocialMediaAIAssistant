@@ -9,6 +9,7 @@ import postsRouter from "./routes/posts"
 import calendarsRouter from "./routes/calendars"
 import brandVoiceRouter from "./routes/brand-voice"
 import authRouter from "./routes/auth"
+import profileRouter from "./routes/profile"
 
 const app = new Hono()
 
@@ -30,6 +31,7 @@ app.route("/api/auth", authRouter)
 app.route("/api/posts", postsRouter)
 app.route("/api/calendars", calendarsRouter)
 app.route("/api/brand-voice", brandVoiceRouter)
+app.route("/api/profile", profileRouter)
 
 const port = Number(process.env.PORT) || 3001
 

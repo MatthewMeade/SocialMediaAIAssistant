@@ -1,5 +1,5 @@
 import { Hono } from "hono"
-import { requireAuth } from "../lib/auth"
+import { requireAuth, isUser } from "../lib/auth"
 import { supabase } from "../lib/supabase"
 
 const app = new Hono()
@@ -13,8 +13,8 @@ function generateSlug(name: string): string {
 
 app.get("/", async (c) => {
   const authResult = await requireAuth(c)
-  if (!authResult || typeof authResult !== "object" || !("id" in authResult) || "status" in authResult) {
-    return authResult as any
+  if (!isUser(authResult)) {
+    return authResult
   }
   const user = authResult
 
@@ -44,8 +44,8 @@ app.get("/", async (c) => {
 
 app.post("/", async (c) => {
   const authResult = await requireAuth(c)
-  if (!authResult || typeof authResult !== "object" || !("id" in authResult) || "status" in authResult) {
-    return authResult as any
+  if (!isUser(authResult)) {
+    return authResult
   }
   const user = authResult
 

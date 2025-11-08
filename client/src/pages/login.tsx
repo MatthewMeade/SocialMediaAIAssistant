@@ -14,7 +14,7 @@ export default function LoginPage() {
   const [password, setPassword] = useState("")
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const { signIn, user, isLoading: authLoading } = useAuth()
+  const { user, isLoading: authLoading } = useAuth()
   const navigate = useNavigate()
 
   // Redirect if already logged in

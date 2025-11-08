@@ -71,7 +71,7 @@ export function AppSidebar({ calendars, currentCalendar }: AppSidebarProps) {
         .from("profiles")
         .select("name, email, avatar_url")
         .eq("id", user.id)
-        .single()
+        .single<{ name: string | null; email: string | null; avatar_url: string | null }>()
 
       if (profile) {
         setUserProfile({

@@ -1,5 +1,5 @@
 import { Hono } from "hono"
-import { requireAuth, canAccessCalendar } from "../lib/auth"
+import { requireAuth, isUser, canAccessCalendar } from "../lib/auth"
 import { supabase } from "../lib/supabase"
 
 const app = new Hono()
@@ -22,8 +22,8 @@ function mapPostToResponse(post: any) {
 
 app.get("/", async (c) => {
   const authResult = await requireAuth(c)
-  if (!authResult || typeof authResult !== "object" || !("id" in authResult) || "status" in authResult) {
-    return authResult as any
+  if (!isUser(authResult)) {
+    return authResult
   }
   const user = authResult
 
@@ -54,8 +54,8 @@ app.get("/", async (c) => {
 
 app.post("/", async (c) => {
   const authResult = await requireAuth(c)
-  if (!authResult || typeof authResult !== "object" || !("id" in authResult) || "status" in authResult) {
-    return authResult as any
+  if (!isUser(authResult)) {
+    return authResult
   }
   const user = authResult
 
@@ -96,8 +96,8 @@ app.post("/", async (c) => {
 
 app.put("/", async (c) => {
   const authResult = await requireAuth(c)
-  if (!authResult || typeof authResult !== "object" || !("id" in authResult) || "status" in authResult) {
-    return authResult as any
+  if (!isUser(authResult)) {
+    return authResult
   }
   const user = authResult
 
@@ -140,8 +140,8 @@ app.put("/", async (c) => {
 
 app.delete("/", async (c) => {
   const authResult = await requireAuth(c)
-  if (!authResult || typeof authResult !== "object" || !("id" in authResult) || "status" in authResult) {
-    return authResult as any
+  if (!isUser(authResult)) {
+    return authResult
   }
   const user = authResult
 
