@@ -10,6 +10,8 @@ import { PostImageGallery } from "./post-image-gallery"
 import { PostCaptionEditor } from "./post-caption-editor"
 import { PostBrandScoreCard } from "./post-brand-score-card"
 import { PostSidebar } from "./post-sidebar"
+import { useMutation } from "@tanstack/react-query"
+import { apiPost } from "@/lib/api-client"
 
 interface PostEditorProps {
   post: Post
@@ -71,6 +73,23 @@ export function PostEditor({
     post: editedPost,
     onSave: handleSaveWrapper,
   })
+
+  // Mutation for applying suggestions
+  const { mutate: applySuggestions, isPending: isApplyingSuggestions } =
+    useMutation({
+      mutationFn: (data: {
+        caption: string
+        suggestions: string[]
+        calendarId: string
+      }) => apiPost<{ newCaption: string }>("/api/ai/apply-suggestions", data),
+      onSuccess: (data) => {
+        handleUpdate({ caption: data.newCaption })
+      },
+      onError: (error) => {
+        console.error("Error applying suggestions:", error)
+        // You could add a toast notification here
+      },
+    })
 
   // Sync editedPost with post prop on mount or when post.id changes
   useEffect(() => {
@@ -148,21 +167,18 @@ export function PostEditor({
   }
 
   const handleApplySuggestions = () => {
-    let improvedCaption = editedPost.caption
+    if (
+      !brandScore ||
+      !brandScore.suggestions ||
+      brandScore.suggestions.length === 0
+    )
+      return
 
-    if (!/[\u{1F300}-\u{1F9FF}]/u.test(improvedCaption)) {
-      improvedCaption = "✨ " + improvedCaption + " 🚀"
-    }
-
-    if (!/\b(share|comment|tag|tell us|let us know|drop|click|visit)\b/i.test(improvedCaption)) {
-      improvedCaption += "\n\nWhat do you think? Share your thoughts below! 👇"
-    }
-
-    if (!/#OurBrand|#Innovation|#Community/i.test(improvedCaption)) {
-      improvedCaption += "\n\n#OurBrand #Innovation #Community"
-    }
-
-    handleUpdate({ caption: improvedCaption })
+    applySuggestions({
+      caption: editedPost.caption,
+      suggestions: brandScore.suggestions,
+      calendarId: editedPost.calendarId,
+    })
   }
 
   const isAuthor = currentUser.id === editedPost.authorId
@@ -218,13 +234,12 @@ export function PostEditor({
           {showBrandScore && brandScore && editedPost.calendarId && (
             <div className="w-80 border-l border-border bg-card flex flex-col min-h-0">
               <BrandScorePanel
-                {...({
-                  score: brandScore,
-                  calendarId: editedPost.calendarId,
-                  isLoading: isFetchingScore,
-                  onApplySuggestions: handleApplySuggestions,
-                  onClose: () => setShowBrandScore(false),
-                } as React.ComponentProps<typeof BrandScorePanel>)}
+                score={brandScore}
+                calendarId={editedPost.calendarId}
+                isLoading={isFetchingScore}
+                isApplyingSuggestions={isApplyingSuggestions}
+                onApplySuggestions={handleApplySuggestions}
+                onClose={() => setShowBrandScore(false)}
               />
             </div>
           )}
@@ -233,6 +248,8 @@ export function PostEditor({
 
       {showCaptionGenerator && (
         <CaptionGeneratorPanel
+          calendarId={editedPost.calendarId}
+          existingCaption={editedPost.caption}
           onApplyCaption={(caption) => {
             handleUpdate({ caption })
             setShowCaptionGenerator(false)

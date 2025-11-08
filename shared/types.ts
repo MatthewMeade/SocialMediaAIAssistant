@@ -77,6 +77,16 @@ export interface BrandScore {
   suggestions: string[]
 }
 
+export interface GeneratedCaption {
+  caption: string
+  score: BrandScore | null
+}
+
+export interface CaptionGenerationResult {
+  captions: GeneratedCaption[]
+  bestCaption: string
+}
+
 export interface MediaItem {
   id: string
   calendarId: string

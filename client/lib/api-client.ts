@@ -5,8 +5,10 @@ import { supabase } from "./supabase/client"
  * Supports AbortController for request cancellation
  */
 export async function apiFetch(url: string, options: RequestInit & { signal?: AbortSignal } = {}): Promise<Response> {
+  console.log('[apiFetch] Starting request to:', url, 'with signal:', options.signal?.aborted ? 'ABORTED' : 'active')
   // Get the current session
   const { data: { session } } = await supabase.auth.getSession()
+  console.log('[apiFetch] Session:', session ? 'exists' : 'none')
 
   // Prepare headers as a plain object
   const headers: Record<string, string> = {}
@@ -37,10 +39,12 @@ export async function apiFetch(url: string, options: RequestInit & { signal?: Ab
   }
 
   // Make the request
+  console.log('[apiFetch] Making fetch request to:', url)
   const response = await fetch(url, {
     ...options,
     headers: new Headers(headers),
   })
+  console.log('[apiFetch] Response status:', response.status)
 
   // Handle 401 errors (unauthorized) - token might be expired
   if (response.status === 401) {

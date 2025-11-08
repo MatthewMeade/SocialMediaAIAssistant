@@ -21,14 +21,22 @@ export function useBrandScore(initialCaption: string | null, calendarId: string 
 
   const { mutate: fetchBrandScore, reset } = useMutation({
     mutationFn: ({ caption, calendarId, signal }: { caption: string; calendarId: string; signal?: AbortSignal }) => {
+      console.log('[useBrandScore] Starting fetch for caption:', caption.substring(0, 50), 'calendarId:', calendarId)
       const body = {
         caption: caption,
         calendarId: calendarId,
       }
-      if (signal) {
-        return (apiPost as ApiPostWithSignal)<BrandScore>('/api/ai/grade-caption', body, { signal })
+      const url = '/api/ai/grade-caption'
+      console.log('[useBrandScore] Making request to:', url, 'with body:', body)
+      try {
+        if (signal) {
+          return (apiPost as ApiPostWithSignal)<BrandScore>(url, body, { signal })
+        }
+        return apiPost<BrandScore>(url, body)
+      } catch (error) {
+        console.error('[useBrandScore] Error in mutationFn:', error)
+        throw error
       }
-      return apiPost<BrandScore>('/api/ai/grade-caption', body)
     },
     onMutate: () => {
       setIsFetchingScore(true)
@@ -66,10 +74,12 @@ export function useBrandScore(initialCaption: string | null, calendarId: string 
     // Clear any pending timeout
     if (scoreFetchTimeoutRef.current) {
       clearTimeout(scoreFetchTimeoutRef.current)
+      scoreFetchTimeoutRef.current = null
     }
 
-    // Cancel any in-flight request
-    if (abortControllerRef.current) {
+    // Cancel any in-flight request (but only if there's actually a request in flight)
+    // Don't abort if we're just clearing a pending timeout
+    if (abortControllerRef.current && isFetchingScore) {
       abortControllerRef.current.abort()
       reset() // Reset the mutation state
     }
@@ -78,12 +88,25 @@ export function useBrandScore(initialCaption: string | null, calendarId: string 
     const abortController = new AbortController()
     abortControllerRef.current = abortController
 
+    // Store the caption we're about to queue, so we can check if it's still current when timeout fires
+    const queuedCaption = caption
+
     // Debounce the request
     scoreFetchTimeoutRef.current = setTimeout(() => {
-      // Double-check the caption hasn't changed during the timeout
-      if (caption !== lastFetchedCaptionRef.current) {
-        lastFetchedCaptionRef.current = caption
-        fetchBrandScore({ caption, calendarId, signal: abortController.signal })
+      // Check if this controller is still the current one (hasn't been replaced)
+      // and if it's been aborted
+      if (abortControllerRef.current !== abortController || abortController.signal.aborted) {
+        console.log('[useBrandScore] Request cancelled - controller replaced or aborted')
+        return
+      }
+      // Only fetch if this caption hasn't already been fetched
+      // (If a newer caption was queued, this timeout would have been cleared)
+      if (queuedCaption !== lastFetchedCaptionRef.current) {
+        console.log('[useBrandScore] Calling fetchBrandScore for:', queuedCaption.substring(0, 50))
+        lastFetchedCaptionRef.current = queuedCaption
+        fetchBrandScore({ caption: queuedCaption, calendarId, signal: abortController.signal })
+      } else {
+        console.log('[useBrandScore] Skipping fetch - caption already fetched:', queuedCaption.substring(0, 50))
       }
     }, 1000)
   }
@@ -91,9 +114,9 @@ export function useBrandScore(initialCaption: string | null, calendarId: string 
   // Fetch initial score on mount
   useEffect(() => {
     if (isInitialMount.current && calendarId && initialCaption) {
-      lastFetchedCaptionRef.current = initialCaption
       const abortController = new AbortController()
       abortControllerRef.current = abortController
+      lastFetchedCaptionRef.current = initialCaption
       fetchBrandScore({ caption: initialCaption, calendarId, signal: abortController.signal })
       isInitialMount.current = false
     }
@@ -115,13 +138,14 @@ export function useBrandScore(initialCaption: string | null, calendarId: string 
     }
 
     return () => {
+      // Clear the timeout - this will prevent the fetch from happening
       if (scoreFetchTimeoutRef.current) {
         clearTimeout(scoreFetchTimeoutRef.current)
+        scoreFetchTimeoutRef.current = null
       }
-      // Cancel any in-flight request when component unmounts or dependencies change
-      if (abortControllerRef.current) {
-        abortControllerRef.current.abort()
-      }
+      // Only abort if there's actually an in-flight request (not just a pending timeout)
+      // The fetchScoreIfNeeded function will handle aborting when setting up a new request
+      // We don't abort here to avoid aborting a request that hasn't started yet
     }
   }, [initialCaption, calendarId])
 

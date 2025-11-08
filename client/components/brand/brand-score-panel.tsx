@@ -11,11 +11,12 @@ export interface BrandScorePanelProps {
   score: BrandScore
   calendarId: string
   isLoading?: boolean
+  isApplyingSuggestions?: boolean
   onApplySuggestions: () => void
   onClose: () => void
 }
 
-export function BrandScorePanel({ score, calendarId, isLoading = false, onApplySuggestions, onClose }: BrandScorePanelProps) {
+export function BrandScorePanel({ score, calendarId, isLoading = false, isApplyingSuggestions = false, onApplySuggestions, onClose }: BrandScorePanelProps) {
   const { brandRules } = useBrandRules(calendarId)
   
   // Create a map of ruleId to rule for quick lookup
@@ -99,9 +100,18 @@ export function BrandScorePanel({ score, calendarId, isLoading = false, onApplyS
                 </li>
               ))}
             </ul>
-            <Button onClick={onApplySuggestions} size="sm" className="w-full gap-2">
-              <Sparkles className="h-3.5 w-3.5" />
-              Apply Suggestions
+            <Button
+              onClick={onApplySuggestions}
+              size="sm"
+              className="w-full gap-2"
+              disabled={isApplyingSuggestions}
+            >
+              {isApplyingSuggestions ? (
+                <Spinner className="h-3.5 w-3.5" />
+              ) : (
+                <Sparkles className="h-3.5 w-3.5" />
+              )}
+              {isApplyingSuggestions ? "Applying..." : "Apply Suggestions"}
             </Button>
           </Card>
         )}
