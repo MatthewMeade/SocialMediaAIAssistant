@@ -1,5 +1,5 @@
 import { IAiDataRepository, LocalDataRepository } from './repository'
-import { chatModel, creativeModel } from './models'
+import { chatModel, creativeModel, imageGenerator } from './models'
 import { getBrandVoiceScore } from './services/grading-service'
 import type { BrandScore } from './schemas'
 import type { BaseMessage } from '@langchain/core/messages'
@@ -7,11 +7,14 @@ import {
   generateCaptions,
   applySuggestions,
 } from './services/generation-service'
+import { generateAndStoreImage } from './services/image-generation-service'
 import type {
   CaptionGenerationRequest,
   CaptionGenerationResult,
 } from './schemas'
 import type { BaseChatModel } from '@langchain/core/language_models/chat_models'
+import type { DallEAPIWrapper } from '@langchain/openai'
+import type { MediaItem } from '../../shared/types'
 // Import agent logic when ready
 // import { runChatAgent } from './services/agent-service'
 
@@ -20,9 +23,10 @@ class AiService {
   private models: {
     chatModel: BaseChatModel
     creativeModel: BaseChatModel
+    imageGenerator: DallEAPIWrapper
   }
 
-  constructor(repository: IAiDataRepository, models: { chatModel: BaseChatModel; creativeModel: BaseChatModel }) {
+  constructor(repository: IAiDataRepository, models: { chatModel: BaseChatModel; creativeModel: BaseChatModel; imageGenerator: DallEAPIWrapper }) {
     this.repo = repository
     this.models = models
   }
@@ -96,10 +100,27 @@ class AiService {
     // return agentResponse;
     return 'Chatbot functionality is not yet implemented.'
   }
+
+  /**
+   * Public method for generating and saving an image.
+   * Generates an image using DALL-E, downloads it, and stores it in Supabase.
+   */
+  async generateAndSaveImage(
+    prompt: string,
+    calendarId: string,
+    userId: string,
+  ): Promise<MediaItem> {
+    return generateAndStoreImage(
+      prompt,
+      calendarId,
+      userId,
+      this.models.imageGenerator,
+    )
+  }
 }
 
 // Initialize the service with the local repository
 // This is the single instance your server will use.
-const aiService = new AiService(new LocalDataRepository(), { chatModel, creativeModel })
+const aiService = new AiService(new LocalDataRepository(), { chatModel, creativeModel, imageGenerator })
 
 export default aiService

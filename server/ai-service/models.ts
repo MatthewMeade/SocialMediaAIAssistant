@@ -1,6 +1,6 @@
 // Using OpenAI as an example. You can swap this with ChatGoogleGenerativeAi
 // or any other LangChain-compatible model.
-import { ChatOpenAI } from '@langchain/openai'
+import { ChatOpenAI, DallEAPIWrapper } from '@langchain/openai'
 
 // Ensure you have OPENAI_API_KEY in your .env or .env.local
 export const chatModel = new ChatOpenAI({
@@ -12,4 +12,11 @@ export const chatModel = new ChatOpenAI({
 export const creativeModel = new ChatOpenAI({
   model: 'gpt-4o',
   temperature: 0.7,
+})
+
+// Image generation model using DALL-E 3
+export const imageGenerator = new DallEAPIWrapper({
+  modelName: 'dall-e-3',
+  n: 1,
+  size: '1024x1024',
 })

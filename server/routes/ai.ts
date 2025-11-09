@@ -6,6 +6,7 @@ import type {
   CaptionGenerationRequest,
   ApplySuggestionsRequest,
 } from '../ai-service/schemas'
+import type { MediaItem } from '../../shared/types'
 
 type Variables = {
   authResult: User
@@ -124,6 +125,45 @@ app.post('/apply-suggestions', async (c) => {
     console.error('[AI_ROUTE] Error applying suggestions:', error)
     return c.json(
       { error: 'Failed to apply suggestions', details: error.message },
+      500,
+    )
+  }
+})
+
+/**
+ * Endpoint for generating images with AI.
+ */
+app.post('/generate-image', async (c) => {
+  const authResult = c.get('authResult')
+  if (!isUser(authResult)) {
+    return c.json({ error: 'Unauthorized' }, 401)
+  }
+  const user = authResult
+
+  const { calendarId, prompt } = await c.req.json()
+
+  if (!calendarId || typeof prompt !== 'string') {
+    return c.json({ error: 'calendarId and prompt are required' }, 400)
+  }
+
+  // 1. **Authorize:**
+  const hasAccess = await canAccessCalendar(user.id, calendarId)
+  if (!hasAccess) {
+    return c.json({ error: 'Forbidden' }, 403)
+  }
+
+  // 2. **Execute:**
+  try {
+    const newMediaItem = await aiService.generateAndSaveImage(
+      prompt,
+      calendarId,
+      user.id,
+    )
+    return c.json(newMediaItem)
+  } catch (error: any) {
+    console.error('[AI_ROUTE] Error generating image:', error)
+    return c.json(
+      { error: 'Failed to generate image', details: error.message },
       500,
     )
   }

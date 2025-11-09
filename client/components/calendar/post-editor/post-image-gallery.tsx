@@ -1,10 +1,11 @@
 import { useState, useEffect } from "react"
-import { Upload, X, ChevronLeft, ChevronRight, ImageIcon } from "lucide-react"
+import { Upload, X, ChevronLeft, ChevronRight, ImageIcon, Sparkles } from "lucide-react"
 import { Label } from "@/components/ui/label"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { cn } from "@/lib/utils"
 import { apiGet, apiPost } from "@/lib/api-client"
-import type { Post } from "@/lib/types"
+import type { Post, MediaItem } from "@/lib/types"
+import { ImageGeneratorPanel } from "@/components/ai/image-generator-panel"
 
 interface PostImageGalleryProps {
   post: Post
@@ -15,6 +16,7 @@ export function PostImageGallery({ post, onUpdate }: PostImageGalleryProps) {
   const [currentImageIndex, setCurrentImageIndex] = useState(0)
   const [isUploading, setIsUploading] = useState(false)
   const [showMediaPicker, setShowMediaPicker] = useState(false)
+  const [showImageGenerator, setShowImageGenerator] = useState(false)
   const [libraryMedia, setLibraryMedia] = useState<any[]>([])
   const [isLoadingLibrary, setIsLoadingLibrary] = useState(false)
 
@@ -82,6 +84,11 @@ export function PostImageGallery({ post, onUpdate }: PostImageGalleryProps) {
   const handleSelectFromLibrary = (url: string) => {
     onUpdate({ images: [...post.images, url] })
     setShowMediaPicker(false)
+  }
+
+  const handleImageGenerated = (mediaItem: MediaItem) => {
+    onUpdate({ images: [...post.images, mediaItem.url] })
+    setShowImageGenerator(false)
   }
 
   return (
@@ -179,6 +186,13 @@ export function PostImageGallery({ post, onUpdate }: PostImageGalleryProps) {
                 <ImageIcon className="h-8 w-8 text-muted-foreground mb-2" />
                 <span className="text-sm text-muted-foreground">Choose from library</span>
               </button>
+              <button
+                onClick={() => setShowImageGenerator(true)}
+                className="flex flex-1 h-32 cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed border-border bg-muted/30 transition-colors hover:border-primary hover:bg-muted/50"
+              >
+                <Sparkles className="h-8 w-8 text-muted-foreground mb-2" />
+                <span className="text-sm text-muted-foreground">Generate with AI</span>
+              </button>
             </div>
           ) : (
             <>
@@ -203,6 +217,12 @@ export function PostImageGallery({ post, onUpdate }: PostImageGalleryProps) {
               >
                 <ImageIcon className="h-5 w-5 text-muted-foreground" />
               </button>
+              <button
+                onClick={() => setShowImageGenerator(true)}
+                className="flex h-16 w-16 cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed border-border bg-muted/30 transition-colors hover:border-primary hover:bg-muted/50"
+              >
+                <Sparkles className="h-5 w-5 text-muted-foreground" />
+              </button>
             </>
           )}
         </div>
@@ -215,6 +235,16 @@ export function PostImageGallery({ post, onUpdate }: PostImageGalleryProps) {
           onSelect={handleSelectFromLibrary}
           libraryMedia={libraryMedia}
           isLoadingLibrary={isLoadingLibrary}
+        />
+      )}
+
+      {showImageGenerator && (
+        <ImageGeneratorPanel
+          isOpen={showImageGenerator}
+          onClose={() => setShowImageGenerator(false)}
+          onImageGenerated={handleImageGenerated}
+          calendarId={post.calendarId}
+          postCaption={post.caption}
         />
       )}
     </>
