@@ -1,13 +1,16 @@
-import { useState } from "react"
+import { useState, useEffect, useMemo, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
-import { Plus, Trash2, Sparkles } from "lucide-react"
-import type { BrandRule } from "@/lib/types"
+import { Plus, Trash2, Sparkles, RefreshCw } from "lucide-react"
+import type { BrandRule, CaptionGenerationResult } from "@/lib/types"
 import { Card } from "@/components/ui/card"
 import { useBrandRules } from "@/lib/hooks/use-brand-rules"
+import { useMutation } from "@tanstack/react-query"
+import { apiPost } from "@/lib/api-client"
+import { Spinner } from "@/components/ui/spinner"
 
 interface BrandVoiceViewProps {
   calendarId: string
@@ -18,6 +21,9 @@ export function BrandVoiceView({ calendarId }: BrandVoiceViewProps) {
   const [editingRule, setEditingRule] = useState<string | null>(null)
   const [newRule, setNewRule] = useState({ title: "", description: "" })
   const [showNewRuleForm, setShowNewRuleForm] = useState(false)
+  const [generatedCaption, setGeneratedCaption] = useState<string | null>(null)
+  const [isGeneratingCaption, setIsGeneratingCaption] = useState(false)
+  const abortControllerRef = useRef<AbortController | null>(null)
 
   const handleToggleRule = async (ruleId: string) => {
     const rule = brandRules.find((r) => r.id === ruleId)
@@ -54,8 +60,116 @@ export function BrandVoiceView({ calendarId }: BrandVoiceViewProps) {
     setEditingRule(null)
   }
 
+  // Mutation for generating captions
+  const { mutate: generateCaption } = useMutation({
+    mutationFn: async (data: { 
+      request: { topic: string; keywords: string[]; tone: string }
+      signal: AbortSignal
+    }) => {
+      return apiPost<CaptionGenerationResult>(
+        "/api/ai/generate-caption",
+        {
+          calendarId,
+          request: data.request,
+        },
+        { signal: data.signal }
+      )
+    },
+    onSuccess: (result) => {
+      setGeneratedCaption(result.caption)
+      setIsGeneratingCaption(false)
+      abortControllerRef.current = null
+    },
+    onError: (error) => {
+      // Don't log errors for aborted requests
+      const isAborted = 
+        (error instanceof Error && error.name === "AbortError") ||
+        (error instanceof DOMException && error.name === "AbortError") ||
+        (typeof error === "object" && error !== null && "name" in error && error.name === "AbortError")
+      
+      if (!isAborted) {
+        console.error("Error generating caption:", error)
+      }
+      setIsGeneratingCaption(false)
+      abortControllerRef.current = null
+    },
+  })
+
+  const handleGenerateExamplePost = () => {
+    // Cancel any in-flight request
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort()
+    }
+
+    // Create new AbortController for this request
+    const abortController = new AbortController()
+    abortControllerRef.current = abortController
+
+    setIsGeneratingCaption(true)
+    generateCaption({
+      request: {
+        topic: "Introducing SocialHub - a new social media management platform that helps teams collaborate and create amazing content",
+        keywords: ["social media", "collaboration", "content creation", "teamwork"],
+        tone: "professional",
+      },
+      signal: abortController.signal,
+    })
+  }
+
+  // Create a dependency string that tracks enabled rules' content
+  const enabledRulesKey = useMemo(() => {
+    const enabledRules = brandRules.filter((r) => r.enabled)
+    // Sort by ID to ensure consistent ordering (important for JSON.stringify comparison)
+    const sortedRules = [...enabledRules].sort((a, b) => a.id.localeCompare(b.id))
+    return JSON.stringify(
+      sortedRules.map((r) => ({
+        id: r.id,
+        title: r.title,
+        description: r.description,
+        enabled: r.enabled,
+      }))
+    )
+  }, [brandRules])
+
+  // Track the count of enabled rules separately to catch additions/deletions
+  const enabledRulesCount = useMemo(() => {
+    return brandRules.filter((r) => r.enabled).length
+  }, [brandRules])
+
+  // Auto-generate caption when component loads or when brand rules change
+  useEffect(() => {
+    if (!isLoading && brandRules.length > 0 && brandRules.some((r) => r.enabled)) {
+      // Cancel any in-flight request
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort()
+      }
+
+      // Create new AbortController for this request
+      const abortController = new AbortController()
+      abortControllerRef.current = abortController
+
+      setIsGeneratingCaption(true)
+      generateCaption({
+        request: {
+          topic: "Introducing SocialHub - a new social media management platform that helps teams collaborate and create amazing content",
+          keywords: ["social media", "collaboration", "content creation", "teamwork"],
+          tone: "professional",
+        },
+        signal: abortController.signal,
+      })
+    }
+
+    // Cleanup: cancel request on unmount
+    return () => {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort()
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isLoading, enabledRulesKey, enabledRulesCount])
+
   const examplePost = {
-    caption: `🚀 Exciting news, team! We've just launched our newest feature that's going to revolutionize how you manage your social media content.
+    caption: generatedCaption || `🚀 Exciting news, team! We've just launched our newest feature that's going to revolutionize how you manage your social media content.
 
 Say goodbye to scattered workflows and hello to seamless collaboration! ✨
 
@@ -184,9 +298,25 @@ What feature would you love to see next? Drop your ideas below! 👇
       {/* Example post - Right side */}
       <div className="w-96 overflow-auto bg-muted/20 p-6">
         <div className="space-y-4">
-          <div className="flex items-center gap-2">
-            <Sparkles className="h-5 w-5 text-primary" />
-            <h2 className="text-lg font-semibold text-foreground">Example Post</h2>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Sparkles className="h-5 w-5 text-primary" />
+              <h2 className="text-lg font-semibold text-foreground">Example Post</h2>
+            </div>
+            <Button
+              onClick={handleGenerateExamplePost}
+              size="sm"
+              variant="outline"
+              className="gap-2"
+              disabled={isGeneratingCaption || brandRules.filter((r) => r.enabled).length === 0}
+            >
+              {isGeneratingCaption ? (
+                <Spinner className="h-4 w-4" />
+              ) : (
+                <RefreshCw className="h-4 w-4" />
+              )}
+              Regenerate
+            </Button>
           </div>
           <p className="text-sm text-muted-foreground">
             Here's an AI-generated example that follows your brand voice guidelines
@@ -203,14 +333,22 @@ What feature would you love to see next? Drop your ideas below! 👇
             <div className="p-4 space-y-3">
               <div className="flex items-center gap-2">
                 <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center">
-                  <span className="text-sm font-medium text-primary">YB</span>
+                  <span className="text-sm font-medium text-primary">SH</span>
                 </div>
                 <div>
-                  <p className="text-sm font-medium text-foreground">Your Brand</p>
+                  <p className="text-sm font-medium text-foreground">SocialHub</p>
                   <p className="text-xs text-muted-foreground">{examplePost.platform}</p>
                 </div>
               </div>
-              <p className="text-sm text-foreground whitespace-pre-wrap leading-relaxed">{examplePost.caption}</p>
+              {isGeneratingCaption ? (
+                <div className="space-y-2 animate-pulse">
+                  <div className="h-4 bg-muted rounded w-full"></div>
+                  <div className="h-4 bg-muted rounded w-5/6"></div>
+                  <div className="h-4 bg-muted rounded w-4/6"></div>
+                </div>
+              ) : (
+                <p className="text-sm text-foreground whitespace-pre-wrap leading-relaxed">{examplePost.caption}</p>
+              )}
             </div>
           </Card>
 

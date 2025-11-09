@@ -24,7 +24,7 @@ function extractTextFromMessage(message: any): string {
 const generationPromptTemplate = new PromptTemplate({
   template: `You are an expert social media copywriter. Your task is to generate a post caption.
 
-**Brand Voice Rules:**
+**Brand Voice Rules (ONLY follow these rules, do not add any additional requirements):**
 {rules}
 
 **Post Details:**
@@ -32,7 +32,7 @@ const generationPromptTemplate = new PromptTemplate({
 - Keywords: {keywords}
 - Tone: {tone}
 
-Generate a single, compelling post caption based on these details and adhering strictly to the brand voice rules.
+Generate a single, compelling post caption based on these details and adhering STRICTLY to ONLY the brand voice rules listed above. Do not include any requirements, styles, or elements that are not explicitly mentioned in the rules above.
 `,
   inputVariables: ['rules', 'topic', 'keywords', 'tone'],
 })
@@ -41,7 +41,7 @@ Generate a single, compelling post caption based on these details and adhering s
 const refinementPromptTemplate = new PromptTemplate({
   template: `You are an expert social media copywriter. Your task is to refine a post caption that failed to meet brand voice guidelines.
 
-**Brand Voice Rules:**
+**Brand Voice Rules (ONLY follow these rules, do not add any additional requirements):**
 {rules}
 
 **Original Caption:**
@@ -55,7 +55,7 @@ const refinementPromptTemplate = new PromptTemplate({
 - Keywords: {keywords}
 - Tone: {tone}
 
-Rewrite the caption to fix the issues, meet all brand voice rules, and fulfill the original post details. Output only the new caption.
+Rewrite the caption to fix the issues, meet ALL brand voice rules listed above, and fulfill the original post details. Only follow the rules explicitly listed above - do not include any requirements, styles, or elements that are not mentioned in the rules. Output only the new caption.
 `,
   inputVariables: [
     'rules',
@@ -100,8 +100,8 @@ export async function generateCaptions(
   creativeModel: BaseChatModel,
   graderFunc: GraderFunction,
 ): Promise<CaptionGenerationResult> {
-  const rulesString = brandRules
-    .filter((r) => r.enabled)
+  const enabledRules = brandRules.filter((r) => r.enabled)
+  const rulesString = enabledRules
     .map((r) => `- ${r.title}: ${r.description}`)
     .join('\n')
 
@@ -119,10 +119,12 @@ export async function generateCaptions(
     initialCaption = request.existingCaption
   } else {
     // Generate from scratch
+    // If no enabled rules, use a default message
+    const rulesForPrompt = rulesString || "No specific brand voice rules are currently active."
     const result = await generationChain.invoke({
       ...request,
       keywords,
-      rules: rulesString,
+      rules: rulesForPrompt,
     })
     initialCaption = extractTextFromMessage(result)
   }
@@ -131,7 +133,7 @@ export async function generateCaptions(
     initialScore = await graderFunc(initialCaption, brandRules)
 
   // 3. Reflect & Refine (if needed)
-    if (initialScore.overall < 85 && brandRules.length > 0) {
+    if (initialScore.overall < 85 && enabledRules.length > 0) {
     // Score is low, refine it once
     const feedback = `
       Overall Score: ${initialScore.overall}/100.
@@ -142,10 +144,11 @@ export async function generateCaptions(
         .join(', ')}
     `
 
+    const rulesForRefinement = rulesString || "No specific brand voice rules are currently active."
     const result = await refinementChain.invoke({
       ...request,
       keywords,
-      rules: rulesString,
+      rules: rulesForRefinement,
       failedCaption: initialCaption,
       feedback,
     })
