@@ -6,7 +6,6 @@ import type {
   CaptionGenerationRequest,
   ApplySuggestionsRequest,
 } from '../ai-service/schemas'
-import type { MediaItem } from '../../shared/types'
 
 type Variables = {
   authResult: User
@@ -170,7 +169,9 @@ app.post('/generate-image', async (c) => {
 })
 
 /**
- * Endpoint for the general chatbot.
+ * Chat endpoint for non-streaming conversations.
+ * Returns JSON with response text and optional client-side tool calls.
+ * Uses threadId to maintain conversation memory across requests.
  */
 app.post('/chat', async (c) => {
   const authResult = c.get('authResult')
@@ -179,22 +180,50 @@ app.post('/chat', async (c) => {
   }
   const user = authResult
 
-  const { input, history, calendarId } = await c.req.json()
+  const { input, history, calendarId, threadId } = await c.req.json()
 
-  if (!input || !calendarId) {
-    return c.json({ error: 'input and calendarId are required' }, 400)
+  // Validate required fields
+  if (!calendarId) {
+    return c.json({ error: 'calendarId is required' }, 400)
   }
 
-  // 1. **Authorize:**
+  // Input can be empty when sending tool results (ToolMessage in history)
+  // But we still require the field to be present
+  if (input === undefined || input === null) {
+    return c.json({ error: 'input is required' }, 400)
+  }
+
+  // Verify user has access to this calendar
+  // Prevents users from accessing other calendars' data through the chat
   const hasAccess = await canAccessCalendar(user.id, calendarId)
   if (!hasAccess) {
     return c.json({ error: 'Forbidden' }, 403)
   }
 
-  // 2. **Execute:**
   try {
-    const response = await aiService.runChat(input, history || [], user.id, calendarId)
-    return c.json({ response })
+    console.log(`[AI_ROUTE] Starting chat request for user ${user.id}, calendar ${calendarId}`)
+
+    // Use provided threadId or generate one based on user+calendar
+    // ThreadId is used by frontend to track conversations
+    const conversationThreadId = threadId || `${user.id}-${calendarId}`
+    const startTime = Date.now()
+
+    // When sending tool results, input can be empty - the agent processes the ToolMessage in history
+    const result = await aiService.runChat(
+      input || "",
+      history || [],
+      user.id,
+      calendarId,
+    )
+
+    const duration = Date.now() - startTime
+    console.log(`[AI_ROUTE] Chat completed in ${duration}ms`)
+
+    return c.json({
+      response: result.response,
+      toolCalls: result.toolCalls,
+      threadId: conversationThreadId
+    })
   } catch (error: any) {
     console.error('[AI_ROUTE] Error in chat agent:', error)
     return c.json({ error: 'Chat failed', details: error.message }, 500)

@@ -2,7 +2,6 @@ import { IAiDataRepository, LocalDataRepository } from './repository'
 import { chatModel, creativeModel, imageGenerator } from './models'
 import { getBrandVoiceScore } from './services/grading-service'
 import type { BrandScore } from './schemas'
-import type { BaseMessage } from '@langchain/core/messages'
 import {
   generateCaptions,
   applySuggestions,
@@ -15,8 +14,7 @@ import type {
 import type { BaseChatModel } from '@langchain/core/language_models/chat_models'
 import type { DallEAPIWrapper } from '@langchain/openai'
 import type { MediaItem } from '../../shared/types'
-// Import agent logic when ready
-// import { runChatAgent } from './services/agent-service'
+import { runChatAgent } from './services/agent-service'
 
 class AiService {
   private repo: IAiDataRepository
@@ -81,24 +79,24 @@ class AiService {
 
   /**
    * Public method for the general chatbot.
-   * This will be responsible for creating user-scoped tools and running the agent.
+   * Creates an agent and runs it with the provided input and history.
    */
   async runChat(
     input: string,
-    history: BaseMessage[],
+    history: Array<{ role: string; content: string; tool_calls?: any[]; tool_call_id?: string; name?: string }>,
     userId: string,
     calendarId: string,
-  ): Promise<string> {
-    // This is where you'd implement Goal 5 & 6.
-    // We will build this out in server/ai-service/services/agent-service.ts
-    // For now, we can stub it:
-    console.log(
-      `Running chat for user ${userId} on calendar ${calendarId} with input: ${input}`,
+  ): Promise<{ response: string; toolCalls?: any[] }> {
+    return await runChatAgent(
+      input,
+      history,
+      userId,
+      calendarId,
+      this.repo,
+      this.models.chatModel,
+      this.models.creativeModel,
+      this.models.imageGenerator,
     )
-    console.log({ history })
-    // const agentResponse = await runChatAgent(input, history, userId, calendarId, this.repo);
-    // return agentResponse;
-    return 'Chatbot functionality is not yet implemented.'
   }
 
   /**
@@ -117,6 +115,7 @@ class AiService {
       this.models.imageGenerator,
     )
   }
+
 }
 
 // Initialize the service with the local repository

@@ -1,11 +1,15 @@
+import { useState } from "react"
 import { Outlet, useParams, Navigate } from "react-router-dom"
 import { useQuery } from "@tanstack/react-query"
 import { SidebarProvider } from "../ui/sidebar"
 import { AppSidebar } from "./app-sidebar"
+import { ChatSidebar } from "../chat/chat-sidebar"
+import { ChatToggleButton } from "../chat/chat-toggle-button"
 import { apiGet } from "../../lib/api-client"
 
 export default function AppLayout() {
   const { calendarSlug } = useParams()
+  const [isChatOpen, setIsChatOpen] = useState(false)
 
   const { data: calendars, isLoading, error } = useQuery({
     queryKey: ["calendars"],
@@ -59,9 +63,27 @@ export default function AppLayout() {
     <SidebarProvider>
       <div className="flex h-screen w-full">
         <AppSidebar calendars={mappedCalendars} currentCalendar={currentCalendar} />
-        <main className="flex-1 overflow-auto">
+        <main
+          className="flex-1 overflow-auto transition-all duration-300"
+          style={{
+            marginRight: isChatOpen ? "24rem" : "0",
+          }}
+        >
           <Outlet />
         </main>
+        {currentCalendar && (
+          <>
+            <ChatSidebar
+              isOpen={isChatOpen}
+              onClose={() => setIsChatOpen(false)}
+              calendarId={currentCalendar.id}
+            />
+            <ChatToggleButton
+              onClick={() => setIsChatOpen(!isChatOpen)}
+              isOpen={isChatOpen}
+            />
+          </>
+        )}
       </div>
     </SidebarProvider>
   )
