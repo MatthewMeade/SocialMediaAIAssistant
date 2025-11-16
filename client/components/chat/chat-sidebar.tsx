@@ -11,6 +11,7 @@ import { appEventBus } from "@/lib/event-bus"
 import { AppEvents, ToolNames } from "@/lib/events"
 import { ApiRoutes } from "@/lib/api-routes"
 import { useAppContext } from "@/components/layout/app-layout"
+import ReactMarkdown from "react-markdown"
 
 interface Message {
   role: "user" | "assistant" | "tool"
@@ -805,7 +806,45 @@ export function ChatSidebar({ isOpen, onClose }: ChatSidebarProps) {
                   {/* Show message content only if there are no tool calls */}
                   {/* When tool calls are present, the message will be shown by ToolCallRenderer */}
                   {(!message.toolCalls || message.toolCalls.length === 0) && message.content && (
-                    <p className="text-sm whitespace-pre-wrap">{message.content}</p>
+                    <div className="text-sm">
+                      <ReactMarkdown
+                        components={{
+                          p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
+                          ul: ({ children }) => <ul className="list-disc list-inside mb-2 space-y-1">{children}</ul>,
+                          ol: ({ children }) => <ol className="list-decimal list-inside mb-2 space-y-1">{children}</ol>,
+                          li: ({ children }) => <li className="ml-2">{children}</li>,
+                          h1: ({ children }) => <h1 className="text-lg font-bold mb-2 mt-2 first:mt-0">{children}</h1>,
+                          h2: ({ children }) => <h2 className="text-base font-bold mb-2 mt-2 first:mt-0">{children}</h2>,
+                          h3: ({ children }) => <h3 className="text-sm font-bold mb-1 mt-2 first:mt-0">{children}</h3>,
+                          code: ({ children, className }) => {
+                            const isInline = !className || !className.includes('language-')
+                            return isInline ? (
+                              <code className="bg-muted/50 px-1 py-0.5 rounded text-xs font-mono">{children}</code>
+                            ) : (
+                              <code className="text-xs font-mono">{children}</code>
+                            )
+                          },
+                          pre: ({ children }) => (
+                            <pre className="bg-muted/50 p-2 rounded text-xs font-mono overflow-x-auto mb-2 whitespace-pre">
+                              {children}
+                            </pre>
+                          ),
+                          blockquote: ({ children }) => (
+                            <blockquote className="border-l-4 border-muted-foreground/30 pl-3 italic my-2">{children}</blockquote>
+                          ),
+                          a: ({ href, children }) => (
+                            <a href={href} target="_blank" rel="noopener noreferrer" className="text-primary underline hover:text-primary/80">
+                              {children}
+                            </a>
+                          ),
+                          strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
+                          em: ({ children }) => <em className="italic">{children}</em>,
+                          hr: () => <hr className="my-3 border-border" />,
+                        }}
+                      >
+                        {message.content}
+                      </ReactMarkdown>
+                    </div>
                   )}
                   {/* Render tool calls with custom UI */}
               {message.toolCalls && message.toolCalls.length > 0 && (
