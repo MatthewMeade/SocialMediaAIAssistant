@@ -1,4 +1,5 @@
-import { useState, useRef, useEffect } from "react"
+import { useState, useRef, useEffect, useCallback } from "react"
+import type React from "react"
 import { useNavigate, useParams } from "react-router-dom"
 import { X, Send, Sparkles, Check, Calendar, FileText, Plus } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -7,6 +8,8 @@ import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/componen
 import { cn } from "@/lib/utils"
 import { apiFetch } from "@/lib/api-client"
 import { appEventBus } from "@/lib/event-bus"
+import { AppEvents, ToolNames } from "@/lib/events"
+import { ApiRoutes } from "@/lib/api-routes"
 import { useAppContext } from "@/components/layout/app-layout"
 
 interface Message {
@@ -276,28 +279,23 @@ function GenericToolCard({ toolCall, isExecuted, isLoading, onExecute }: ToolCal
 
 // Client-side messages that appear above tool calls to guide the user
 const TOOL_CALL_MESSAGES: Record<string, string> = {
-  create_post: "Let's get started! Click the button below to create and open the post editor.",
-  open_post: "I'll help you open that post. Click the button below to view it in the editor.",
-  apply_caption_to_open_post: "I've generated a caption for your post. Review it below and click to apply it to your post.",
-  navigate_to_calendar: "Let me take you to your calendar. Click the button below to navigate there.",
+  [ToolNames.CREATE_POST]: "Let's get started! Click the button below to create and open the post editor.",
+  [ToolNames.OPEN_POST]: "I'll help you open that post. Click the button below to view it in the editor.",
+  [ToolNames.APPLY_CAPTION]: "I've generated a caption for your post. Review it below and click to apply it to your post.",
+  [ToolNames.NAVIGATE]: "Let me take you to your calendar. Click the button below to navigate there.",
+}
+
+// Lookup map for tool components - makes it easy to add new tools
+const toolComponentMap: Record<string, React.ComponentType<ToolCallUIProps>> = {
+  [ToolNames.APPLY_CAPTION]: CaptionSuggestionCard,
+  [ToolNames.CREATE_POST]: CreatePostCard,
+  [ToolNames.OPEN_POST]: OpenPostCard,
+  [ToolNames.NAVIGATE]: NavigationButton,
 }
 
 function ToolCallRenderer({ toolCall, isExecuted, isLoading, onExecute, aiMessage }: ToolCallUIProps) {
-  const cardContent = (() => {
-    if (toolCall.name === "apply_caption_to_open_post") {
-      return <CaptionSuggestionCard toolCall={toolCall} isExecuted={isExecuted} isLoading={isLoading} onExecute={onExecute} />
-    }
-    if (toolCall.name === "create_post") {
-      return <CreatePostCard toolCall={toolCall} isExecuted={isExecuted} isLoading={isLoading} onExecute={onExecute} />
-    }
-    if (toolCall.name === "open_post") {
-      return <OpenPostCard toolCall={toolCall} isExecuted={isExecuted} isLoading={isLoading} onExecute={onExecute} />
-    }
-    if (toolCall.name === "navigate_to_calendar") {
-      return <NavigationButton toolCall={toolCall} isExecuted={isExecuted} isLoading={isLoading} onExecute={onExecute} />
-    }
-    return <GenericToolCard toolCall={toolCall} isExecuted={isExecuted} isLoading={isLoading} onExecute={onExecute} />
-  })()
+  // Look up the component from the map, default to GenericToolCard if not found
+  const CardComponent = toolComponentMap[toolCall.name] || GenericToolCard
 
   // Use client-side message if available, otherwise fall back to AI message
   const message = TOOL_CALL_MESSAGES[toolCall.name] || aiMessage
@@ -307,12 +305,24 @@ function ToolCallRenderer({ toolCall, isExecuted, isLoading, onExecute, aiMessag
     return (
       <div className="space-y-2">
         <p className="text-sm text-muted-foreground">{message}</p>
-        {cardContent}
+        <CardComponent
+          toolCall={toolCall}
+          isExecuted={isExecuted}
+          isLoading={isLoading}
+          onExecute={onExecute}
+        />
       </div>
     )
   }
 
-  return cardContent
+  return (
+    <CardComponent
+      toolCall={toolCall}
+      isExecuted={isExecuted}
+      isLoading={isLoading}
+      onExecute={onExecute}
+    />
+  )
 }
 
 export function ChatSidebar({ isOpen, onClose }: ChatSidebarProps) {
@@ -334,7 +344,7 @@ export function ChatSidebar({ isOpen, onClose }: ChatSidebarProps) {
    * @param options Configuration options
    * @returns The value returned by checkFn when condition is met, or undefined if timeout
    */
-  const waitForContext = async <T,>(
+  const waitForContext = useCallback(async <T,>(
     checkFn: (context: typeof clientContext) => T | null | undefined,
     options: {
       maxWaitTime?: number
@@ -371,7 +381,7 @@ export function ChatSidebar({ isOpen, onClose }: ChatSidebarProps) {
 
     // Timeout - return the last checked value
     return checkFn(contextRef.current)
-  }
+  }, [])
 
   // Initialize threadId with a stable value that doesn't depend on context
   // We'll update it when context is available
@@ -415,7 +425,7 @@ export function ChatSidebar({ isOpen, onClose }: ChatSidebarProps) {
    * This is a "dumb" dispatcher - it doesn't contain logic specific to any tool.
    * Components subscribe to events and handle the logic themselves.
    */
-  const executeClientTool = async (toolCall: ToolCall) => {
+  const executeClientTool = useCallback(async (toolCall: ToolCall) => {
     // Prevent multiple clicks
     if (executedToolCalls.has(toolCall.id)) {
       return
@@ -426,55 +436,83 @@ export function ChatSidebar({ isOpen, onClose }: ChatSidebarProps) {
     
     setIsLoading(true)
     try {
-      let result: string
+      let result: string = ""
 
-      // Dispatch the appropriate event based on tool name
-      // TypeScript will narrow the type based on the discriminated union
-      if (toolCall.name === "navigate_to_calendar") {
-        // Dispatch navigation event - the layout or appropriate component will handle it
-        appEventBus.dispatch("navigate-to-calendar", {
-          label: toolCall.args.label,
-        })
+      // Use a switch statement for better readability and type safety
+      switch (toolCall.name) {
+        case ToolNames.NAVIGATE: {
+          // TypeScript narrows the type here
+          if (toolCall.name !== ToolNames.NAVIGATE) break
+          const navigateArgs = toolCall.args as { label?: string; page?: string }
+      // Dispatch navigation event - the layout or appropriate component will handle it
+          appEventBus.dispatch(AppEvents.NAVIGATE_TO_CALENDAR, {
+            label: navigateArgs.label,
+          })
 
-        // Also handle navigation directly here as a fallback
-        if (calendarSlug) {
-          navigate(`/${calendarSlug}/calendar`)
-          result = "Navigated to calendar page"
-        } else {
-          result = "Navigation requested - please use the button"
+          // Also handle navigation directly here as a fallback
+          if (calendarSlug) {
+            navigate(`/${calendarSlug}/calendar`)
+            result = "Navigated to calendar page"
+          } else {
+            result = "Navigation requested - please use the button"
+          }
+          break
         }
-      } else if (toolCall.name === "apply_caption_to_open_post") {
+
+        case ToolNames.APPLY_CAPTION: {
+          // TypeScript narrows the type here
+          if (toolCall.name !== ToolNames.APPLY_CAPTION) break
+          const applyCaptionArgs = toolCall.args as { postId: string; caption: string }
         // Dispatch caption application event - PostEditor will handle it
         // Use postId from context if available (more reliable for new posts), otherwise use the one from tool call
-        const postId = clientContext.pageState?.postId || toolCall.args.postId
-        appEventBus.dispatch("apply-caption", {
-          postId: postId,
-          caption: toolCall.args.caption,
-        })
-        result = `Caption suggestion applied to post ${postId}`
-      } else if (toolCall.name === "create_post") {
+          const postId = clientContext.pageState?.postId || applyCaptionArgs.postId
+          appEventBus.dispatch(AppEvents.APPLY_CAPTION, {
+            postId: postId,
+            caption: applyCaptionArgs.caption,
+          })
+          result = `Caption suggestion applied to post ${postId}`
+          break
+        }
+
+        case ToolNames.CREATE_POST: {
+          // TypeScript narrows the type here
+          if (toolCall.name !== ToolNames.CREATE_POST) break
+          const createPostArgs = toolCall.args as { date: string; label?: string }
         // Dispatch post creation event - CalendarView will handle it
-        appEventBus.dispatch("create-post", {
-          date: toolCall.args.date,
-        })
+          appEventBus.dispatch(AppEvents.CREATE_POST, {
+            date: createPostArgs.date,
+          })
 
-        // Wait for the post to be created and context to be updated with postId
-        const postId = await waitForContext(
-          (context) => context.pageState?.postId,
-          { maxWaitTime: 5000, pollInterval: 100, initialDelay: 100 }
-        )
+          // Wait for the post to be created and context to be updated with postId
+          const postId = await waitForContext(
+            (context) => context.pageState?.postId,
+            { maxWaitTime: 5000, pollInterval: 100, initialDelay: 100 }
+          )
 
-        result = postId
-          ? `Post created and opened (ID: ${postId})`
-          : `Post creation requested for ${toolCall.args.date}`
-      } else if (toolCall.name === "open_post") {
+          result = postId
+            ? `Post created and opened (ID: ${postId})`
+            : `Post creation requested for ${createPostArgs.date}`
+          break
+        }
+
+        case ToolNames.OPEN_POST: {
+          // TypeScript narrows the type here
+          if (toolCall.name !== ToolNames.OPEN_POST) break
+          const openPostArgs = toolCall.args as { postId: string; label?: string }
         // Dispatch post open event - CalendarView will handle it
-        appEventBus.dispatch("open-post", {
-          postId: toolCall.args.postId,
-        })
-        result = `Open post requested for ${toolCall.args.postId}`
-      } else {
-        throw new Error(`Unknown client-side tool: ${toolCall.name}`)
+          appEventBus.dispatch(AppEvents.OPEN_POST, {
+            postId: openPostArgs.postId,
+          })
+          result = `Open post requested for ${openPostArgs.postId}`
+          break
+        }
+
+        default: {
+          // This trick gives you a compile-time error if you
+          // forget to handle a new tool type from your `ToolCall` discriminated union.
+          const _exhaustiveCheck: never = toolCall as never
+          throw new Error(`Unknown client-side tool: ${(toolCall as any).name}`)
+        }
       }
 
       // Send tool result back to agent
@@ -498,14 +536,14 @@ export function ChatSidebar({ isOpen, onClose }: ChatSidebarProps) {
     } finally {
       setIsLoading(false)
     }
-  }
+  }, [executedToolCalls, clientContext, calendarSlug, navigate, sendToolResult, waitForContext])
 
   /**
    * Sends a tool execution result back to the agent.
    * With returnDirect: true, the tool result goes directly to the user, but we still need
    * to send a ToolMessage so the agent knows the tool completed and can continue.
    */
-  const sendToolResult = async (toolCallId: string, toolName: string, result: string) => {
+  const sendToolResult = useCallback(async (toolCallId: string, toolName: string, result: string) => {
     const history = buildMessageHistory(messages)
     
     const toolMessage = {
@@ -525,7 +563,7 @@ export function ChatSidebar({ isOpen, onClose }: ChatSidebarProps) {
       pageState: currentContext.pageState || undefined,
     }
 
-    const response = await apiFetch("/api/ai/chat", {
+    const response = await apiFetch(ApiRoutes.AI.CHAT, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -559,7 +597,7 @@ export function ChatSidebar({ isOpen, onClose }: ChatSidebarProps) {
         toolCalls: data.toolCalls,
       },
     ])
-  }
+  }, [messages, threadId])
   
   /**
    * Converts frontend messages to API format.
@@ -668,7 +706,7 @@ export function ChatSidebar({ isOpen, onClose }: ChatSidebarProps) {
         pageState: clientContext.pageState || undefined,
       }
 
-      const response = await apiFetch("/api/ai/chat", {
+      const response = await apiFetch(ApiRoutes.AI.CHAT, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -731,7 +769,7 @@ export function ChatSidebar({ isOpen, onClose }: ChatSidebarProps) {
           <Sparkles className="h-5 w-5 text-primary" />
           <h2 className="text-lg font-semibold text-foreground">AI Assistant</h2>
         </div>
-        <Button variant="ghost" size="icon" onClick={onClose} className="h-8 w-8">
+        <Button variant="ghost" size="icon-sm" onClick={onClose}>
           <X className="h-4 w-4" />
           <span className="sr-only">Close chat</span>
         </Button>

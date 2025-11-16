@@ -6,6 +6,7 @@ import { PostEditor } from "./post-editor"
 import { usePosts } from "@/lib/hooks/use-posts"
 import { useAppContext } from "@/components/layout/app-layout"
 import { useAppEvent } from "@/hooks/use-app-event"
+import { AppEvents } from "@/lib/events"
 // import { appEventBus } from "@/lib/event-bus" // Unused
 import type { Post, User } from "@/lib/types"
 
@@ -186,7 +187,7 @@ export function CalendarView({ currentUser, calendarId, calendarSlug, postToOpen
 
   // Listen for create-post events from AI chat
   useAppEvent<{ date: string }>(
-    "create-post",
+    AppEvents.CREATE_POST,
     (event) => {
       const targetDate = parseDate(event.date)
       handleAddPost(targetDate)
@@ -196,7 +197,7 @@ export function CalendarView({ currentUser, calendarId, calendarSlug, postToOpen
 
   // Listen for open-post events from AI chat
   useAppEvent<{ postId: string }>(
-    "open-post",
+    AppEvents.OPEN_POST,
     (event) => {
       const post = posts.find((p: Post) => p.id === event.postId)
       if (post) {

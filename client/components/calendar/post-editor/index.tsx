@@ -14,6 +14,8 @@ import { PostSidebar } from "./post-sidebar"
 import { useMutation } from "@tanstack/react-query"
 import { apiPost } from "@/lib/api-client"
 import { appEventBus } from "@/lib/event-bus"
+import { AppEvents } from "@/lib/events"
+import { ApiRoutes } from "@/lib/api-routes"
 
 interface PostEditorProps {
   post: Post
@@ -83,7 +85,7 @@ export function PostEditor({
         caption: string
         suggestions: string[]
         calendarId: string
-      }) => apiPost<{ newCaption: string }>("/api/ai/apply-suggestions", data),
+      }) => apiPost<{ newCaption: string }>(ApiRoutes.AI.APPLY_SUGGESTIONS, data),
       onSuccess: (data) => {
         handleUpdate({ caption: data.newCaption })
         // Trigger brand score fetch for the updated caption
@@ -102,20 +104,20 @@ export function PostEditor({
     // Dispatch open event when component mounts or post changes
     // Only dispatch if post has an ID (not a new post)
     if (post.id && post.id !== '') {
-      appEventBus.dispatch('post-editor-open', { postId: post.id })
+      appEventBus.dispatch(AppEvents.POST_EDITOR_OPEN, { postId: post.id })
     }
 
     return () => {
       // Dispatch close event when component unmounts
       if (post.id && post.id !== '') {
-        appEventBus.dispatch('post-editor-close', {})
+        appEventBus.dispatch(AppEvents.POST_EDITOR_CLOSE, {})
       }
     }
   }, [post.id])
 
   // Listen for caption application events from the AI chat
   useAppEvent<{ postId: string; caption: string }>(
-    'apply-caption',
+    AppEvents.APPLY_CAPTION,
     (event) => {
       // Apply if this event is for the current post
       // For new posts, we accept any apply-caption event since there's only one post open

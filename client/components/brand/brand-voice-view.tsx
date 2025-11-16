@@ -10,6 +10,7 @@ import { Card } from "@/components/ui/card"
 import { useBrandRules } from "@/lib/hooks/use-brand-rules"
 import { useMutation } from "@tanstack/react-query"
 import { apiPost } from "@/lib/api-client"
+import { ApiRoutes } from "@/lib/api-routes"
 import { Spinner } from "@/components/ui/spinner"
 
 interface BrandVoiceViewProps {
@@ -67,7 +68,7 @@ export function BrandVoiceView({ calendarId }: BrandVoiceViewProps) {
       signal: AbortSignal
     }) => {
       return apiPost<CaptionGenerationResult>(
-        "/api/ai/generate-caption",
+        ApiRoutes.AI.GENERATE_CAPTION,
         {
           calendarId,
           request: data.request,

@@ -6,6 +6,7 @@ import { AppSidebar } from "./app-sidebar"
 import { ChatSidebar } from "../chat/chat-sidebar"
 import { ChatToggleButton } from "../chat/chat-toggle-button"
 import { apiGet } from "../../lib/api-client"
+import { ApiRoutes } from "../../lib/api-routes"
 
 // 1. Define the context state
 interface IClientContext {
@@ -50,7 +51,7 @@ export default function AppLayout() {
     queryKey: ["calendars"],
     queryFn: async () => {
       return apiGet<Array<{ id: string; name: string; slug: string; color: string; createdAt: string }>>(
-        "/api/calendars",
+        ApiRoutes.CALENDARS,
       )
     },
     retry: 1,

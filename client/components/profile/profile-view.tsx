@@ -12,6 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Separator } from "@/components/ui/separator"
 import { createClient } from "@/lib/supabase/client"
 import { apiPost, apiPut } from "@/lib/api-client"
+import { ApiRoutes } from "@/lib/api-routes"
 import { useToast } from "@/hooks/use-toast"
 
 interface ProfileViewProps {
@@ -95,7 +96,7 @@ export function ProfileView({ currentUser }: ProfileViewProps) {
   const handleSaveProfile = async () => {
     setSavingProfile(true)
     try {
-      await apiPut("/api/profile", profile)
+      await apiPut(ApiRoutes.PROFILE, profile)
 
       toast({
         title: "Profile saved",
@@ -117,7 +118,7 @@ export function ProfileView({ currentUser }: ProfileViewProps) {
     setSavingAppearance(true)
     try {
       setTheme(appearance.theme)
-      await apiPut("/api/profile", appearance)
+      await apiPut(ApiRoutes.PROFILE, appearance)
 
       toast({
         title: "Appearance saved",
@@ -144,8 +145,8 @@ export function ProfileView({ currentUser }: ProfileViewProps) {
       const formData = new FormData()
       formData.append("file", file)
 
-      const { url } = await apiPost<{ url: string }>("/api/upload", formData)
-      await apiPut("/api/profile", { avatar_url: url })
+      const { url } = await apiPost<{ url: string }>(ApiRoutes.UPLOAD, formData)
+      await apiPut(ApiRoutes.PROFILE, { avatar_url: url })
 
       setProfile({ ...profile, avatar_url: url })
       toast({

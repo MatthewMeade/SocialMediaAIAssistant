@@ -25,6 +25,7 @@ import {
 import { createClient } from "@/lib/supabase/client"
 import { CreateCalendarDialog } from "@/components/settings/create-calendar-dialog"
 import { apiPost } from "@/lib/api-client"
+import { ApiRoutes } from "@/lib/api-routes"
 import { useAuth } from "@/lib/auth/context"
 
 interface AppSidebarProps {
@@ -107,7 +108,7 @@ export function AppSidebar({ calendars, currentCalendar }: AppSidebarProps) {
   const handleCreateCalendar = async (data: { name: string; color: string }) => {
     try {
       const newCalendar = await apiPost<{ id: string; name: string; slug: string; color: string }>(
-        "/api/calendars",
+        ApiRoutes.CALENDARS,
         data,
       )
 

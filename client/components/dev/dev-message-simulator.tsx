@@ -7,6 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Label } from "@/components/ui/label"
 import { Sparkles } from "lucide-react"
 import { apiPost } from "@/lib/api-client"
+import { ApiRoutes } from "@/lib/api-routes"
 
 interface DevMessageSimulatorProps {
   open: boolean
@@ -29,7 +30,7 @@ export function DevMessageSimulator({ open, onOpenChange, calendarId }: DevMessa
 
     setIsSubmitting(true)
     try {
-      await apiPost("/api/inbox", {
+      await apiPost(ApiRoutes.INBOX, {
         calendar_id: calendarId,
         user_id: `dev_user_${Date.now()}`,
         user_name: userName,

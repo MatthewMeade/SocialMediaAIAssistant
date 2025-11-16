@@ -6,6 +6,7 @@ import { X, Sparkles, Check } from "lucide-react"
 import { Card } from "@/components/ui/card"
 import { useMutation } from "@tanstack/react-query"
 import { apiPost } from "@/lib/api-client"
+import { ApiRoutes } from "@/lib/api-routes"
 import type {
   CaptionGenerationResult,
 } from "@/lib/types"
@@ -43,7 +44,7 @@ export function CaptionGeneratorPanel({
     isPending: isGenerating,
   } = useMutation({
     mutationFn: (request: CaptionRequest) =>
-      apiPost<CaptionGenerationResult>("/api/ai/generate-caption", {
+      apiPost<CaptionGenerationResult>(ApiRoutes.AI.GENERATE_CAPTION, {
         calendarId,
         request,
       }),
@@ -66,7 +67,7 @@ export function CaptionGeneratorPanel({
       suggestions: string[]
       calendarId: string
     }) =>
-      apiPost<{ newCaption: string }>("/api/ai/apply-suggestions", data),
+      apiPost<{ newCaption: string }>(ApiRoutes.AI.APPLY_SUGGESTIONS, data),
     onSuccess: (result) => {
       setGeneratedCaption(result.newCaption)
       setCaptionScore(null) // No score returned from apply-suggestions
@@ -124,7 +125,7 @@ export function CaptionGeneratorPanel({
             Caption Generator
           </h3>
         </div>
-        <Button variant="ghost" size="icon" onClick={onClose} className="h-8 w-8">
+        <Button variant="ghost" size="icon-sm" onClick={onClose}>
           <X className="h-4 w-4" />
         </Button>
       </div>

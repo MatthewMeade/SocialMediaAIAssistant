@@ -25,11 +25,11 @@ export function CalendarHeader({ currentDate, onPreviousMonth, onNextMonth, onTo
             Today
           </Button>
           <div className="flex items-center gap-1">
-            <Button variant="ghost" size="icon" onClick={onPreviousMonth} className="h-8 w-8">
+            <Button variant="ghost" size="icon-sm" onClick={onPreviousMonth}>
               <ChevronLeft className="h-4 w-4" />
             </Button>
             <span className="min-w-[140px] text-center text-sm font-medium text-foreground">{monthYear}</span>
-            <Button variant="ghost" size="icon" onClick={onNextMonth} className="h-8 w-8">
+            <Button variant="ghost" size="icon-sm" onClick={onNextMonth}>
               <ChevronRight className="h-4 w-4" />
             </Button>
           </div>

@@ -7,6 +7,7 @@ import { Input } from "../../components/ui/input"
 import { Label } from "../../components/ui/label"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card"
 import { apiGet } from "../../lib/api-client"
+import { ApiRoutes } from "../../lib/api-routes"
 import { supabase } from "../../lib/supabase/client"
 
 export default function LoginPage() {
@@ -22,7 +23,7 @@ export default function LoginPage() {
     if (!authLoading && user) {
       // User is already logged in, fetch calendars and redirect
       apiGet<Array<{ id: string; name: string; slug: string; color: string; createdAt: string }>>(
-        "/api/calendars"
+        ApiRoutes.CALENDARS
       )
         .then((calendars) => {
           if (calendars && calendars.length > 0) {
@@ -70,7 +71,7 @@ export default function LoginPage() {
 
       // Fetch user's calendars
       const calendars = await apiGet<Array<{ id: string; name: string; slug: string; color: string; createdAt: string }>>(
-        "/api/calendars"
+        ApiRoutes.CALENDARS
       )
 
       // Navigate to the first calendar, or to a default route if no calendars exist

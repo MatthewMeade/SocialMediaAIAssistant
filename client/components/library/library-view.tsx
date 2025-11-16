@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 import { useMedia } from "@/lib/hooks/use-media"
 import { apiPost } from "@/lib/api-client"
+import { ApiRoutes } from "@/lib/api-routes"
 import type { MediaItem } from "@/lib/types"
 
 interface LibraryViewProps {
@@ -35,7 +36,7 @@ export function LibraryView({ calendarId }: LibraryViewProps) {
         formData.append("file", file)
         formData.append("calendarId", calendarId)
 
-        await apiPost("/api/upload", formData)
+        await apiPost(ApiRoutes.UPLOAD, formData)
       }
     } catch (error) {
       console.error("[v0] Error uploading files:", error)

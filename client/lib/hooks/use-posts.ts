@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import type { Post } from "@/lib/types"
 import { apiGet, apiPost, apiPut, apiDelete } from "@/lib/api-client"
+import { ApiRoutes } from "@/lib/api-routes"
 
 export function usePosts(calendarId: string) {
   const queryClient = useQueryClient()
@@ -8,7 +9,7 @@ export function usePosts(calendarId: string) {
   const query = useQuery({
     queryKey: ["posts", calendarId],
     queryFn: async () => {
-      return apiGet<Post[]>(`/api/posts?calendarId=${calendarId}`)
+      return apiGet<Post[]>(`${ApiRoutes.POSTS}?calendarId=${calendarId}`)
     },
     enabled: !!calendarId,
   })
@@ -20,7 +21,7 @@ export function usePosts(calendarId: string) {
         ...post,
         date: post.date instanceof Date ? post.date.toISOString() : post.date,
       }
-      return apiPost<Post>("/api/posts", postToSend)
+      return apiPost<Post>(ApiRoutes.POSTS, postToSend)
     },
     onMutate: async (newPost) => {
       await queryClient.cancelQueries({ queryKey: ["posts", calendarId] })
@@ -60,7 +61,7 @@ export function usePosts(calendarId: string) {
         ...post,
         date: post.date instanceof Date ? post.date.toISOString() : post.date,
       }
-      return apiPut<Post>("/api/posts", postToSend)
+      return apiPut<Post>(ApiRoutes.POSTS, postToSend)
     },
     onMutate: async (updatedPost) => {
       await queryClient.cancelQueries({ queryKey: ["posts", calendarId] })
@@ -84,7 +85,7 @@ export function usePosts(calendarId: string) {
 
   const deleteMutation = useMutation({
     mutationFn: async (postId: string) => {
-      return apiDelete(`/api/posts?id=${postId}&calendarId=${calendarId}`)
+      return apiDelete(`${ApiRoutes.POSTS}?id=${postId}&calendarId=${calendarId}`)
     },
     onMutate: async (postId) => {
       await queryClient.cancelQueries({ queryKey: ["posts", calendarId] })

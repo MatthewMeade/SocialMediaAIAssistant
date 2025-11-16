@@ -2,11 +2,12 @@ import { useParams } from "react-router-dom"
 import { useQuery } from "@tanstack/react-query"
 import { BrandVoiceView } from "../../components/brand/brand-voice-view"
 import { supabase } from "../../lib/supabase/client"
+import type { Calendar } from "../../lib/types"
 
 export default function BrandVoicePage() {
   const { calendarSlug } = useParams()
 
-  const { data: calendar } = useQuery<{ id: string; name: string; slug: string; color: string; created_at: string } | null>({
+  const { data: calendar } = useQuery<Calendar | null>({
     queryKey: ["calendar", calendarSlug],
     queryFn: async () => {
       if (!calendarSlug) return null
@@ -16,7 +17,16 @@ export default function BrandVoicePage() {
         .eq("slug", calendarSlug)
         .single()
       if (error) throw error
-      return data as { id: string; name: string; slug: string; color: string; created_at: string } | null
+      if (!data) return null
+      // Transform database response to match Calendar type
+      return {
+        id: data.id,
+        name: data.name,
+        slug: data.slug,
+        organizationId: data.organization_id ?? null,
+        color: data.color,
+        createdAt: new Date(data.created_at),
+      } as Calendar
     },
     enabled: !!calendarSlug,
   })

@@ -4,6 +4,7 @@ import { Label } from "@/components/ui/label"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { cn } from "@/lib/utils"
 import { apiGet, apiPost } from "@/lib/api-client"
+import { ApiRoutes } from "@/lib/api-routes"
 import type { Post, MediaItem } from "@/lib/types"
 import { ImageGeneratorPanel } from "@/components/ai/image-generator-panel"
 
@@ -17,7 +18,7 @@ export function PostImageGallery({ post, onUpdate }: PostImageGalleryProps) {
   const [isUploading, setIsUploading] = useState(false)
   const [showMediaPicker, setShowMediaPicker] = useState(false)
   const [showImageGenerator, setShowImageGenerator] = useState(false)
-  const [libraryMedia, setLibraryMedia] = useState<any[]>([])
+  const [libraryMedia, setLibraryMedia] = useState<MediaItem[]>([])
   const [isLoadingLibrary, setIsLoadingLibrary] = useState(false)
 
   useEffect(() => {
@@ -39,7 +40,7 @@ export function PostImageGallery({ post, onUpdate }: PostImageGalleryProps) {
         formData.append("file", file)
         formData.append("calendarId", post.calendarId)
 
-        const data = await apiPost<{ url: string }>("/api/upload", formData)
+        const data = await apiPost<{ url: string }>(ApiRoutes.UPLOAD, formData)
         uploadedUrls.push(data.url)
       }
 
@@ -67,7 +68,7 @@ export function PostImageGallery({ post, onUpdate }: PostImageGalleryProps) {
       if (!calendarId) return
 
       try {
-        const data = await apiGet<Array<{ id: string; url: string; filename: string }>>(
+        const data = await apiGet<MediaItem[]>(
           `/api/media?calendarId=${calendarId}`,
         )
         setLibraryMedia(data)
@@ -261,7 +262,7 @@ function MediaLibraryDialog({
   isOpen: boolean
   onClose: () => void
   onSelect: (url: string) => void
-  libraryMedia: any[]
+  libraryMedia: MediaItem[]
   isLoadingLibrary: boolean
 }) {
   return (
