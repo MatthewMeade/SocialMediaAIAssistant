@@ -421,6 +421,115 @@ export function ChatSidebar({ isOpen, onClose }: ChatSidebarProps) {
   }, [isOpen])
 
   /**
+   * Converts frontend messages to API format.
+   * Uses LangChain's format directly ("user" | "assistant" | "tool") to avoid unnecessary conversions.
+   * Only converts camelCase toolCalls to snake_case tool_calls for API compatibility.
+   */
+  function buildMessageHistory(messages: Message[]): Array<{
+    role: "user" | "assistant" | "tool"
+    content: string
+    tool_calls?: Array<{ id: string; name: string; args: any }>
+    tool_call_id?: string
+    name?: string
+  }> {
+    return messages.map((msg) => {
+      // Handle ToolMessages
+      if (msg.role === "tool") {
+        return {
+          role: "tool" as const,
+          content: msg.content,
+          tool_call_id: msg.tool_call_id!,
+          ...(msg.name && { name: msg.name }),
+        }
+      }
+
+      // Handle User and Assistant messages
+      const apiMsg: {
+        role: "user" | "assistant" | "tool"
+        content: string
+        tool_calls?: Array<{ id: string; name: string; args: any }>
+        tool_call_id?: string
+        name?: string
+      } = {
+        role: msg.role,
+        content: msg.content || "",
+      }
+
+      // Convert camelCase toolCalls to snake_case tool_calls for API
+      if (msg.toolCalls && msg.toolCalls.length > 0) {
+        apiMsg.tool_calls = msg.toolCalls.map((tc) => ({
+          id: tc.id,
+          name: tc.name,
+          args: tc.args,
+        }))
+      }
+
+      return apiMsg
+    })
+  }
+
+  /**
+   * Sends a tool execution result back to the agent.
+   * With returnDirect: true, the tool result goes directly to the user, but we still need
+   * to send a ToolMessage so the agent knows the tool completed and can continue.
+   */
+  const sendToolResult = useCallback(async (toolCallId: string, toolName: string, result: string) => {
+    const history = buildMessageHistory(messages)
+
+    const toolMessage = {
+      role: "tool" as const,
+      content: result,
+      tool_call_id: toolCallId,
+      name: toolName,
+    }
+
+    // Build the clientContext object from the AppContext
+    // Use contextRef to get the latest context value (updated by useEffect)
+    const currentContext = contextRef.current
+    const backendClientContext = {
+      page: currentContext.page === 'postEditor' ? 'calendar' : currentContext.page,
+      component: currentContext.page === 'postEditor' ? 'postEditor' : undefined,
+      postId: currentContext.pageState?.postId || undefined,
+      pageState: currentContext.pageState || undefined,
+    }
+
+    const response = await apiFetch(ApiRoutes.AI.CHAT, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        input: "",
+        history: [...history, toolMessage],
+        calendarId: contextRef.current.calendarId || '',
+        threadId,
+        clientContext: backendClientContext,
+      }),
+    })
+
+    if (!response.ok) {
+      throw new Error("Failed to send tool result")
+    }
+
+    const data = await response.json()
+
+    // Add the ToolMessage to state so it's included in future history
+    setMessages((prev) => [
+      ...prev,
+      {
+        role: "tool",
+        content: result,
+        tool_call_id: toolCallId,
+        name: toolName,
+      },
+      // Add the agent's continuation response (after processing the ToolMessage)
+      {
+        role: "assistant",
+        content: data.response || "",
+        toolCalls: data.toolCalls,
+      },
+    ])
+  }, [messages, threadId])
+
+  /**
    * Executes a client-side tool action by dispatching events via the event bus.
    * This is a "dumb" dispatcher - it doesn't contain logic specific to any tool.
    * Components subscribe to events and handle the logic themselves.
@@ -510,6 +619,7 @@ export function ChatSidebar({ isOpen, onClose }: ChatSidebarProps) {
         default: {
           // This trick gives you a compile-time error if you
           // forget to handle a new tool type from your `ToolCall` discriminated union.
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
           const _exhaustiveCheck: never = toolCall as never
           throw new Error(`Unknown client-side tool: ${(toolCall as any).name}`)
         }
@@ -539,120 +649,11 @@ export function ChatSidebar({ isOpen, onClose }: ChatSidebarProps) {
   }, [executedToolCalls, clientContext, calendarSlug, navigate, sendToolResult, waitForContext])
 
   /**
-   * Sends a tool execution result back to the agent.
-   * With returnDirect: true, the tool result goes directly to the user, but we still need
-   * to send a ToolMessage so the agent knows the tool completed and can continue.
-   */
-  const sendToolResult = useCallback(async (toolCallId: string, toolName: string, result: string) => {
-    const history = buildMessageHistory(messages)
-    
-    const toolMessage = {
-      role: "tool" as const,
-      content: result,
-      tool_call_id: toolCallId,
-      name: toolName,
-    }
-
-    // Build the clientContext object from the AppContext
-    // Use contextRef to get the latest context value (updated by useEffect)
-    const currentContext = contextRef.current
-    const backendClientContext = {
-      page: currentContext.page === 'postEditor' ? 'calendar' : currentContext.page,
-      component: currentContext.page === 'postEditor' ? 'postEditor' : undefined,
-      postId: currentContext.pageState?.postId || undefined,
-      pageState: currentContext.pageState || undefined,
-    }
-
-    const response = await apiFetch(ApiRoutes.AI.CHAT, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        input: "",
-        history: [...history, toolMessage],
-        calendarId: contextRef.current.calendarId || '',
-        threadId,
-        clientContext: backendClientContext,
-      }),
-    })
-
-    if (!response.ok) {
-      throw new Error("Failed to send tool result")
-    }
-
-    const data = await response.json()
-    
-    // Add the ToolMessage to state so it's included in future history
-    setMessages((prev) => [
-      ...prev,
-      {
-        role: "tool",
-        content: result,
-        tool_call_id: toolCallId,
-        name: toolName,
-      },
-      // Add the agent's continuation response (after processing the ToolMessage)
-      {
-        role: "assistant",
-        content: data.response || "",
-        toolCalls: data.toolCalls,
-      },
-    ])
-  }, [messages, threadId])
-  
-  /**
-   * Converts frontend messages to API format.
-   * Uses LangChain's format directly ("user" | "assistant" | "tool") to avoid unnecessary conversions.
-   * Only converts camelCase toolCalls to snake_case tool_calls for API compatibility.
-   */
-  function buildMessageHistory(messages: Message[]): Array<{
-    role: "user" | "assistant" | "tool"
-    content: string
-    tool_calls?: Array<{ id: string; name: string; args: any }>
-    tool_call_id?: string
-    name?: string
-  }> {
-    return messages.map((msg) => {
-      // Handle ToolMessages
-      if (msg.role === "tool") {
-        return {
-          role: "tool" as const,
-          content: msg.content,
-          tool_call_id: msg.tool_call_id!,
-          ...(msg.name && { name: msg.name }),
-        }
-      }
-      
-      // Handle User and Assistant messages
-      const apiMsg: {
-        role: "user" | "assistant" | "tool"
-        content: string
-        tool_calls?: Array<{ id: string; name: string; args: any }>
-        tool_call_id?: string
-        name?: string
-      } = {
-        role: msg.role,
-        content: msg.content || "",
-      }
-      
-      // Convert camelCase toolCalls to snake_case tool_calls for API
-      if (msg.toolCalls && msg.toolCalls.length > 0) {
-        apiMsg.tool_calls = msg.toolCalls.map((tc) => ({
-          id: tc.id,
-          name: tc.name,
-          args: tc.args,
-        }))
-      }
-      
-      return apiMsg
-    })
-  }
-
-  /**
    * Handles sending a user message to the agent.
    * Updates UI optimistically, then adds the agent's response when it arrives.
    * If there are pending tool calls, sends cancellation ToolMessages for them.
    */
-  const handleSend = async () => {
+  const handleSend = useCallback(async () => {
     if (!input.trim() || isLoading) return
 
     const userMessage: Message = { role: "user", content: input.trim() }
@@ -747,7 +748,7 @@ export function ChatSidebar({ isOpen, onClose }: ChatSidebarProps) {
     } finally {
       setIsLoading(false)
     }
-  }
+  }, [input, isLoading, messages, executedToolCalls, clientContext, threadId])
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
