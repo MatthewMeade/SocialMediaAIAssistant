@@ -11,9 +11,10 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Separator } from "@/components/ui/separator"
 import { createClient } from "@/lib/supabase/client"
-import { apiPost, apiPut } from "@/lib/api-client"
+import { apiGet, apiPost, apiPut } from "@/lib/api-client"
 import { ApiRoutes } from "@/lib/api-routes"
 import { useToast } from "@/hooks/use-toast"
+import { useQuery } from "@tanstack/react-query"
 
 interface ProfileViewProps {
   currentUser: { id: string; name: string; email: string }
@@ -136,14 +137,37 @@ export function ProfileView({ currentUser }: ProfileViewProps) {
     }
   }
 
+  // Get user's calendars to use for avatar upload (calendarId is required)
+  const { data: calendars } = useQuery({
+    queryKey: ["calendars"],
+    queryFn: async () => {
+      return apiGet<Array<{ id: string; name: string; slug: string; color: string; createdAt: string }>>(
+        ApiRoutes.CALENDARS,
+      )
+    },
+    retry: 1,
+  })
+
   const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
+
+    // Get the first calendar for avatar upload (calendarId is required for all uploads)
+    const firstCalendar = calendars?.[0]
+    if (!firstCalendar) {
+      toast({
+        title: "Error",
+        description: "Please create a calendar before uploading an avatar.",
+        variant: "destructive",
+      })
+      return
+    }
 
     setUploadingAvatar(true)
     try {
       const formData = new FormData()
       formData.append("file", file)
+      formData.append("calendarId", firstCalendar.id)
 
       const { url } = await apiPost<{ url: string }>(ApiRoutes.UPLOAD, formData)
       await apiPut(ApiRoutes.PROFILE, { avatar_url: url })

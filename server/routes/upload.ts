@@ -17,7 +17,7 @@ app.use('*', requireAuth)
  * Upload endpoint for files
  * Accepts multipart/form-data with:
  * - file: The file to upload
- * - calendarId: (optional) The calendar ID to associate the file with
+ * - calendarId: The calendar ID to associate the file with (required)
  */
 app.post('/', async (c) => {
   const authResult = c.get('authResult')
@@ -36,24 +36,24 @@ app.post('/', async (c) => {
       return c.json({ error: 'No file provided' }, 400)
     }
 
-    // If calendarId is provided, verify access
-    if (calendarId) {
-      const hasAccess = await canAccessCalendar(user.id, calendarId)
-      if (!hasAccess) {
-        return c.json({ error: 'Forbidden' }, 403)
-      }
+    // calendarId is required to ensure all files are tracked in the database
+    if (!calendarId) {
+      return c.json({ error: 'calendarId is required' }, 400)
+    }
+
+    // Verify user has access to the calendar
+    const hasAccess = await canAccessCalendar(user.id, calendarId)
+    if (!hasAccess) {
+      return c.json({ error: 'Forbidden' }, 403)
     }
 
     // Convert File to Buffer for Supabase storage
     const arrayBuffer = await file.arrayBuffer()
     const buffer = Buffer.from(arrayBuffer)
-    const _fileExtension = file.name.split('.').pop() || 'bin'
     const filename = `${Date.now()}_${file.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`
     
-    // Determine file path - use calendarId folder if provided, otherwise use user folder
-    const filePath = calendarId 
-      ? `${calendarId}/${filename}`
-      : `users/${user.id}/${filename}`
+    // Use calendarId-based path structure
+    const filePath = `${calendarId}/${filename}`
 
     console.log(`[UPLOAD] Uploading file to Supabase storage at: ${filePath}`)
 
@@ -82,21 +82,19 @@ app.post('/', async (c) => {
     const publicUrl = publicUrlData.publicUrl
     console.log(`[UPLOAD] File stored at public URL: ${publicUrl}`)
 
-    // If calendarId is provided, save metadata to database
-    if (calendarId) {
-      const mediaItem = await saveMedia(
-        calendarId,
-        user.id,
-        publicUrl,
-        filename,
-        buffer.length,
-        file.type,
-      )
+    // Save metadata to database - calendarId is guaranteed to exist at this point
+    const mediaItem = await saveMedia(
+      calendarId,
+      user.id,
+      publicUrl,
+      filename,
+      buffer.length,
+      file.type,
+    )
 
-      if (!mediaItem) {
-        console.error('[UPLOAD] Failed to save media metadata')
-        // Still return the URL even if metadata save fails
-      }
+    if (!mediaItem) {
+      console.error('[UPLOAD] Failed to save media metadata')
+      // Still return the URL even if metadata save fails, but log the error
     }
 
     return c.json({ url: publicUrl })
