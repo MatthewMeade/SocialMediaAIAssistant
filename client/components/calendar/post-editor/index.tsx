@@ -253,7 +253,13 @@ export function PostEditor({
 
             <PostCaptionEditor
               caption={editedPost.caption}
-              onCaptionChange={(caption) => handleUpdate({ caption })}
+              onCaptionChange={(caption) => {
+                handleUpdate({ caption })
+                // Trigger brand score recalculation when caption changes
+                if (editedPost.calendarId && caption) {
+                  fetchScoreIfNeeded(caption, editedPost.calendarId)
+                }
+              }}
               onOpenCaptionGenerator={() => setShowCaptionGenerator(true)}
             />
 

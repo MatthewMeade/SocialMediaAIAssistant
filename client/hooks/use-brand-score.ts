@@ -147,7 +147,8 @@ export function useBrandScore(initialCaption: string | null, calendarId: string 
       // The fetchScoreIfNeeded function will handle aborting when setting up a new request
       // We don't abort here to avoid aborting a request that hasn't started yet
     }
-  }, [initialCaption, calendarId])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialCaption, calendarId]) // fetchScoreIfNeeded is stable and doesn't need to be in deps
 
   return {
     brandScore,
