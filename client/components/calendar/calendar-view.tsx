@@ -4,6 +4,7 @@ import { CalendarHeader } from "./calendar-header"
 import { CalendarGrid } from "./calendar-grid"
 import { PostEditor } from "./post-editor"
 import { usePosts } from "@/lib/hooks/use-posts"
+import { useAppContext } from "@/components/layout/app-layout"
 import type { Post, User } from "@/lib/types"
 
 interface CalendarViewProps {
@@ -19,8 +20,21 @@ export function CalendarView({ currentUser, calendarId, calendarSlug, postToOpen
   const [currentDate, setCurrentDate] = useState(new Date())
   const [selectedPost, setSelectedPost] = useState<Post | null>(null)
   const [isEditorOpen, setIsEditorOpen] = useState(false)
+  const { setClientContext } = useAppContext()
 
   const { posts = [], isLoading, createPost, updatePost, deletePost } = usePosts(calendarId)
+
+  // 1. Set the page context when editor closes (no Effect needed for initial load)
+  // The AppLayout already calculates the base page from location
+  // We only need to update when editor state changes
+  useEffect(() => {
+    if (!isEditorOpen) {
+      // Clear any override and set back to calendar
+      setClientContext("calendar", {
+        currentMonth: currentDate.getMonth(),
+      })
+    }
+  }, [isEditorOpen, setClientContext, currentDate])
 
   useEffect(() => {
     if (postToOpen) {
@@ -28,12 +42,13 @@ export function CalendarView({ currentUser, calendarId, calendarSlug, postToOpen
       if (post) {
         setSelectedPost(post)
         setIsEditorOpen(true)
+        setClientContext("postEditor", { postId: post.id })
         const params = new URLSearchParams(searchParams.toString())
         params.delete("post")
         navigate(`/${calendarSlug}/calendar?${params.toString()}`, { replace: true })
       }
     }
-  }, [postToOpen, posts, searchParams, navigate, calendarSlug])
+  }, [postToOpen, posts, searchParams, navigate, calendarSlug, setClientContext])
 
   const handlePreviousMonth = () => {
     setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() - 1))
@@ -48,8 +63,9 @@ export function CalendarView({ currentUser, calendarId, calendarSlug, postToOpen
   }
 
   const handleAddPost = (date: Date) => {
+    const tempId = `temp-${Date.now()}`
     setSelectedPost({
-      id: "",
+      id: tempId,
       calendarId,
       date,
       caption: "",
@@ -61,11 +77,15 @@ export function CalendarView({ currentUser, calendarId, calendarSlug, postToOpen
       comments: [],
     })
     setIsEditorOpen(true)
+    // 2. Set context to "postEditor" when modal opens
+    setClientContext("postEditor", { postId: tempId })
   }
 
   const handleEditPost = (post: Post) => {
     setSelectedPost(post)
     setIsEditorOpen(true)
+    // 2. Set context to "postEditor" when modal opens
+    setClientContext("postEditor", { postId: post.id })
   }
 
   const handleSavePost = async (post: Post) => {
@@ -89,10 +109,14 @@ export function CalendarView({ currentUser, calendarId, calendarSlug, postToOpen
   const handleCloseEditor = () => {
     setIsEditorOpen(false)
     setSelectedPost(null)
+    // 3. Revert context back to "calendar" when modal closes
+    setClientContext("calendar", {
+      currentMonth: currentDate.getMonth(),
+    })
   }
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full relative">
       <CalendarHeader
         currentDate={currentDate}
         onPreviousMonth={handlePreviousMonth}

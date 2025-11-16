@@ -23,7 +23,13 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 
   public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    console.error("Uncaught error:", error, errorInfo)
+    console.error("=== Error Boundary Caught Error ===")
+    console.error("Error:", error)
+    console.error("Error Message:", error.message)
+    console.error("Error Stack:", error.stack)
+    console.error("Error Info:", errorInfo)
+    console.error("Component Stack:", errorInfo.componentStack)
+    console.error("===================================")
   }
 
   private handleReset = () => {
@@ -48,10 +54,20 @@ export class ErrorBoundary extends Component<Props, State> {
             </CardHeader>
             <CardContent className="space-y-4">
               {this.state.error && (
-                <div className="rounded-md bg-muted p-4">
+                <div className="rounded-md bg-muted p-4 space-y-2">
                   <p className="text-sm font-mono text-muted-foreground">
                     {this.state.error.message}
                   </p>
+                  {this.state.error.stack && (
+                    <details className="mt-2">
+                      <summary className="text-xs cursor-pointer text-muted-foreground hover:text-foreground">
+                        Stack Trace
+                      </summary>
+                      <pre className="mt-2 text-xs overflow-auto max-h-40">
+                        {this.state.error.stack}
+                      </pre>
+                    </details>
+                  )}
                 </div>
               )}
               <div className="flex gap-2">

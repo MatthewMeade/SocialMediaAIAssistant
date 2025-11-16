@@ -4,6 +4,7 @@ import { BrandScorePanel } from "@/components/brand/brand-score-panel"
 import { CaptionGeneratorPanel } from "@/components/ai/caption-generator-panel"
 import { useBrandScore } from "@/hooks/use-brand-score"
 import { usePostAutoSave } from "@/hooks/use-post-auto-save"
+import { useAppEvent } from "@/hooks/use-app-event"
 import { normalizeDate } from "./utils"
 import { PostEditorHeader } from "./post-editor-header"
 import { PostImageGallery } from "./post-image-gallery"
@@ -12,6 +13,7 @@ import { PostBrandScoreCard } from "./post-brand-score-card"
 import { PostSidebar } from "./post-sidebar"
 import { useMutation } from "@tanstack/react-query"
 import { apiPost } from "@/lib/api-client"
+import { appEventBus } from "@/lib/event-bus"
 
 interface PostEditorProps {
   post: Post
@@ -95,7 +97,38 @@ export function PostEditor({
       },
     })
 
-  // Sync editedPost with post prop on mount or when post.id changes
+  // Dispatch event when post editor opens/closes
+  useEffect(() => {
+    // Dispatch open event when component mounts or post changes
+    // Only dispatch if post has an ID (not a new post)
+    if (post.id && post.id !== '') {
+      appEventBus.dispatch('post-editor-open', { postId: post.id })
+    }
+
+    return () => {
+      // Dispatch close event when component unmounts
+      if (post.id && post.id !== '') {
+        appEventBus.dispatch('post-editor-close', {})
+      }
+    }
+  }, [post.id])
+
+  // Listen for caption application events from the AI chat
+  useAppEvent<{ postId: string; caption: string }>(
+    'apply-caption',
+    (event) => {
+      // Only apply if this event is for the current post
+      if (event.postId === editedPost.id) {
+        handleUpdate({ caption: event.caption })
+        // Trigger brand score fetch for the new caption
+        if (editedPost.calendarId) {
+          fetchScoreIfNeeded(event.caption, editedPost.calendarId)
+        }
+      }
+    },
+    [editedPost.id, editedPost.calendarId, fetchScoreIfNeeded],
+  )
+
   useEffect(() => {
     if (isInitialMount.current) {
       isInitialMount.current = false
@@ -188,7 +221,7 @@ export function PostEditor({
   const isAuthor = currentUser.id === editedPost.authorId
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm">
+    <div className="absolute inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm">
       <div className="relative w-full max-w-6xl h-[85vh] rounded-lg border border-border bg-card shadow-lg flex flex-col">
         <PostEditorHeader
           post={editedPost}

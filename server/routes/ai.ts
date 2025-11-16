@@ -1,7 +1,11 @@
 import { Hono } from 'hono'
 import type { User } from '@supabase/supabase-js'
 import { requireAuth, isUser, canAccessCalendar } from '../lib/auth'
-import aiService from '../ai-service' // Import our new façade
+import { LocalDataRepository } from '../ai-service/repository'
+import { ToolService } from '../services/tool-service'
+import { ChatService } from '../services/chat-service'
+import { chatModel, creativeModel, imageGenerator } from '../ai-service/models'
+import { generateAndStoreImage } from '../ai-service/services/image-generation-service'
 import type {
   CaptionGenerationRequest,
   ApplySuggestionsRequest,
@@ -38,9 +42,24 @@ app.post('/grade-caption', async (c) => {
     return c.json({ error: 'Forbidden' }, 403)
   }
 
-  // 2. **Execute:** Call the AI service with the *validated* context
+  // 2. **Execute:** Use ToolService to grade the caption
   try {
-    const score = await aiService.gradeCaption(caption, calendarId)
+    const repo = new LocalDataRepository()
+    const toolService = new ToolService(
+      { userId: user.id, calendarId },
+      { repo, chatModel, creativeModel, imageGenerator },
+    )
+
+    // Get brand rules and grade the caption
+    const brandRules = await toolService.getBrandRules()
+    const { getBrandVoiceScore } = await import(
+      '../ai-service/services/grading-service'
+    )
+    const score = await getBrandVoiceScore(
+      caption,
+      brandRules,
+      chatModel,
+    )
     return c.json(score)
   } catch (error: any) {
     console.error('[AI_ROUTE] Error grading caption:', error)
@@ -75,7 +94,13 @@ app.post('/generate-caption', async (c) => {
 
   // 2. **Execute:**
   try {
-    const result = await aiService.generateCaptions(request, calendarId)
+    const repo = new LocalDataRepository()
+    const toolService = new ToolService(
+      { userId: user.id, calendarId },
+      { repo, chatModel, creativeModel, imageGenerator },
+    )
+
+    const result = await toolService.generateCaption(request)
     return c.json(result)
   } catch (error: any) {
     console.error('[AI_ROUTE] Error generating caption:', error)
@@ -118,7 +143,16 @@ app.post('/apply-suggestions', async (c) => {
 
   // 2. **Execute:**
   try {
-    const newCaption = await aiService.applySuggestions(caption, suggestions)
+    const repo = new LocalDataRepository()
+    const toolService = new ToolService(
+      { userId: user.id, calendarId },
+      { repo, chatModel, creativeModel, imageGenerator },
+    )
+
+    const newCaption = await toolService.applySuggestionsToCaption(
+      caption,
+      suggestions,
+    )
     return c.json({ newCaption })
   } catch (error: any) {
     console.error('[AI_ROUTE] Error applying suggestions:', error)
@@ -153,10 +187,13 @@ app.post('/generate-image', async (c) => {
 
   // 2. **Execute:**
   try {
-    const newMediaItem = await aiService.generateAndSaveImage(
+    // Image generation is still handled by the pure service function
+    // This can be moved to ToolService in a future refactor if needed
+    const newMediaItem = await generateAndStoreImage(
       prompt,
       calendarId,
       user.id,
+      imageGenerator,
     )
     return c.json(newMediaItem)
   } catch (error: any) {
@@ -180,7 +217,7 @@ app.post('/chat', async (c) => {
   }
   const user = authResult
 
-  const { input, history, calendarId, threadId } = await c.req.json()
+  const { input, history, calendarId, threadId, clientContext } = await c.req.json()
 
   // Validate required fields
   if (!calendarId) {
@@ -208,12 +245,22 @@ app.post('/chat', async (c) => {
     const conversationThreadId = threadId || `${user.id}-${calendarId}`
     const startTime = Date.now()
 
-    // When sending tool results, input can be empty - the agent processes the ToolMessage in history
-    const result = await aiService.runChat(
-      input || "",
+    // Instantiate services with validated context
+    const repo = new LocalDataRepository()
+    const toolService = new ToolService(
+      { userId: user.id, calendarId },
+      { repo, chatModel, creativeModel, imageGenerator },
+    )
+    const chatService = new ChatService(
+      { userId: user.id, calendarId },
+      { repo, toolService, chatModel, creativeModel, imageGenerator },
+    )
+
+    // Run the chat with clientContext to determine which tools are available
+    const result = await chatService.runChat(
+      input || '',
       history || [],
-      user.id,
-      calendarId,
+      clientContext,
     )
 
     const duration = Date.now() - startTime
@@ -222,7 +269,7 @@ app.post('/chat', async (c) => {
     return c.json({
       response: result.response,
       toolCalls: result.toolCalls,
-      threadId: conversationThreadId
+      threadId: conversationThreadId,
     })
   } catch (error: any) {
     console.error('[AI_ROUTE] Error in chat agent:', error)

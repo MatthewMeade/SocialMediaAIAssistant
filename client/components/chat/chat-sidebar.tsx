@@ -1,10 +1,13 @@
 import { useState, useRef, useEffect } from "react"
 import { useNavigate, useParams } from "react-router-dom"
-import { X, Send, Sparkles } from "lucide-react"
+import { X, Send, Sparkles, Check, Calendar, FileText } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
+import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { cn } from "@/lib/utils"
 import { apiFetch } from "@/lib/api-client"
+import { appEventBus } from "@/lib/event-bus"
+import { useAppContext } from "@/components/layout/app-layout"
 
 interface Message {
   role: "user" | "assistant" | "tool"
@@ -14,25 +17,167 @@ interface Message {
   name?: string
 }
 
-interface ToolCall {
-  id: string
-  name: string
-  args: {
-    label?: string
-    action?: string
-    data?: any
+// Discriminated union for different tool call types
+type ToolCall =
+  | {
+    id: string
+    name: "navigate_to_calendar"
+    args: {
+      label?: string
+      page?: string
+    }
   }
-}
+  | {
+    id: string
+    name: "apply_caption_to_open_post"
+    args: {
+      postId: string
+      caption: string
+    }
+  }
+  | {
+    id: string
+    name: string
+    args: Record<string, any>
+  }
 
 interface ChatSidebarProps {
   isOpen: boolean
   onClose: () => void
-  calendarId: string
+  // No calendarId prop needed - it comes from context
 }
 
-export function ChatSidebar({ isOpen, onClose, calendarId }: ChatSidebarProps) {
+// Custom UI components for different tool types
+interface ToolCallUIProps {
+  toolCall: ToolCall
+  isExecuted: boolean
+  isLoading: boolean
+  onExecute: (toolCall: ToolCall) => void
+}
+
+function CaptionSuggestionCard({ toolCall, isExecuted, isLoading, onExecute }: ToolCallUIProps) {
+  if (toolCall.name !== "apply_caption_to_open_post") return null
+
+  const { caption } = toolCall.args
+  const preview = caption.length > 150 ? caption.substring(0, 150) + "..." : caption
+
+  return (
+    <Card className="border-primary/20 bg-primary/5">
+      <CardHeader className="pb-3">
+        <div className="flex items-center gap-2">
+          <FileText className="h-4 w-4 text-primary" />
+          <CardTitle className="text-sm font-medium">Caption Suggestion</CardTitle>
+        </div>
+      </CardHeader>
+      <CardContent className="pb-3">
+        <div className="space-y-2">
+          <p className="text-sm text-muted-foreground">Suggested caption for your post:</p>
+          <div className="rounded-md border bg-background p-3">
+            <p className="text-sm whitespace-pre-wrap">{preview}</p>
+            {caption.length > 150 && (
+              <p className="text-xs text-muted-foreground mt-2">
+                {caption.length} characters total
+              </p>
+            )}
+          </div>
+        </div>
+      </CardContent>
+      <CardFooter className="pt-0">
+        <Button
+          onClick={() => onExecute(toolCall)}
+          disabled={isLoading || isExecuted}
+          className="w-full"
+          size="sm"
+        >
+          {isExecuted ? (
+            <>
+              <Check className="h-4 w-4 mr-2" />
+              Caption Applied
+            </>
+          ) : (
+            <>
+              <FileText className="h-4 w-4 mr-2" />
+              Apply Caption
+            </>
+          )}
+        </Button>
+      </CardFooter>
+    </Card>
+  )
+}
+
+function NavigationButton({ toolCall, isExecuted, isLoading, onExecute }: ToolCallUIProps) {
+  if (toolCall.name !== "navigate_to_calendar") return null
+
+  const label = toolCall.args.label || "Open Calendar"
+
+  return (
+    <Card className="border-border">
+      <CardContent className="p-4">
+        <Button
+          onClick={() => onExecute(toolCall)}
+          disabled={isLoading || isExecuted}
+          variant="outline"
+          className="w-full justify-start"
+          size="sm"
+        >
+          {isExecuted ? (
+            <>
+              <Check className="h-4 w-4 mr-2" />
+              {label}
+            </>
+          ) : (
+            <>
+              <Calendar className="h-4 w-4 mr-2" />
+              {label}
+            </>
+          )}
+        </Button>
+      </CardContent>
+    </Card>
+  )
+}
+
+function GenericToolCard({ toolCall, isExecuted, isLoading, onExecute }: ToolCallUIProps) {
+  return (
+    <Card className="border-border">
+      <CardContent className="p-4">
+        <div className="space-y-2">
+          <p className="text-sm font-medium">{toolCall.name}</p>
+          <Button
+            onClick={() => onExecute(toolCall)}
+            disabled={isLoading || isExecuted}
+            variant="outline"
+            className="w-full"
+            size="sm"
+          >
+            {isExecuted ? "✓ Executed" : "Execute"}
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
+function ToolCallRenderer({ toolCall, isExecuted, isLoading, onExecute }: ToolCallUIProps) {
+  if (toolCall.name === "apply_caption_to_open_post") {
+    return <CaptionSuggestionCard toolCall={toolCall} isExecuted={isExecuted} isLoading={isLoading} onExecute={onExecute} />
+  }
+  if (toolCall.name === "navigate_to_calendar") {
+    return <NavigationButton toolCall={toolCall} isExecuted={isExecuted} isLoading={isLoading} onExecute={onExecute} />
+  }
+  return <GenericToolCard toolCall={toolCall} isExecuted={isExecuted} isLoading={isLoading} onExecute={onExecute} />
+}
+
+export function ChatSidebar({ isOpen, onClose }: ChatSidebarProps) {
   const navigate = useNavigate()
   const { calendarSlug } = useParams()
+  const { clientContext } = useAppContext() // 1. Read the full context
+
+  // Initialize threadId with a stable value that doesn't depend on context
+  // We'll update it when context is available
+  const [threadId, setThreadId] = useState<string>(() => `default-${Date.now()}`)
+
   const [messages, setMessages] = useState<Message[]>([
     {
       role: "assistant",
@@ -41,7 +186,13 @@ export function ChatSidebar({ isOpen, onClose, calendarId }: ChatSidebarProps) {
   ])
   const [input, setInput] = useState("")
   const [isLoading, setIsLoading] = useState(false)
-  const [threadId] = useState<string>(() => `${calendarId}-${Date.now()}`)
+
+  // Update threadId when calendarId becomes available
+  useEffect(() => {
+    if (clientContext.calendarId) {
+      setThreadId(`${clientContext.calendarId}-${Date.now()}`)
+    }
+  }, [clientContext.calendarId])
   const [executedToolCalls, setExecutedToolCalls] = useState<Set<string>>(new Set())
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -61,8 +212,9 @@ export function ChatSidebar({ isOpen, onClose, calendarId }: ChatSidebarProps) {
   }, [isOpen])
 
   /**
-   * Executes a client-side tool action locally in the browser.
-   * These actions don't require server interaction - they're UI operations like navigation or clearing chat.
+   * Executes a client-side tool action by dispatching events via the event bus.
+   * This is a "dumb" dispatcher - it doesn't contain logic specific to any tool.
+   * Components subscribe to events and handle the logic themselves.
    */
   const executeClientTool = async (toolCall: ToolCall) => {
     // Prevent multiple clicks
@@ -75,18 +227,36 @@ export function ChatSidebar({ isOpen, onClose, calendarId }: ChatSidebarProps) {
     
     setIsLoading(true)
     try {
-      // Handle navigate_to_calendar tool
+      let result: string
+
+      // Dispatch the appropriate event based on tool name
+      // TypeScript will narrow the type based on the discriminated union
       if (toolCall.name === "navigate_to_calendar") {
-        const result = await executeToolAction(
-          "navigate_to_calendar",
-          toolCall.args.data,
-          messages,
-          setMessages,
-          navigate,
-          calendarSlug
-        )
-        await sendToolResult(toolCall.id, toolCall.name, result)
+        // Dispatch navigation event - the layout or appropriate component will handle it
+        appEventBus.dispatch("navigate-to-calendar", {
+          label: toolCall.args.label,
+        })
+
+        // Also handle navigation directly here as a fallback
+        if (calendarSlug) {
+          navigate(`/${calendarSlug}/calendar`)
+          result = "Navigated to calendar page"
+        } else {
+          result = "Navigation requested - please use the button"
+        }
+      } else if (toolCall.name === "apply_caption_to_open_post") {
+        // Dispatch caption application event - PostEditor will handle it
+        appEventBus.dispatch("apply-caption", {
+          postId: toolCall.args.postId,
+          caption: toolCall.args.caption,
+        })
+        result = `Caption suggestion applied to post ${toolCall.args.postId}`
+      } else {
+        throw new Error(`Unknown client-side tool: ${toolCall.name}`)
       }
+
+      // Send tool result back to agent
+      await sendToolResult(toolCall.id, toolCall.name, result)
     } catch (error) {
       // If execution fails, unmark as executed so user can retry
       setExecutedToolCalls((prev) => {
@@ -106,28 +276,6 @@ export function ChatSidebar({ isOpen, onClose, calendarId }: ChatSidebarProps) {
       setIsLoading(false)
     }
   }
-  
-  /**
-   * Executes a specific tool action and returns a result message.
-   */
-  async function executeToolAction(
-    action: string,
-    _data: unknown,
-    _currentMessages: Message[],
-    _setMessages: React.Dispatch<React.SetStateAction<Message[]>>,
-    navigateFn: (path: string) => void,
-    slug: string | undefined
-  ): Promise<string> {
-    if (action === "navigate_to_calendar") {
-      if (slug) {
-        navigateFn(`/${slug}/calendar`)
-        return "Navigated to calendar page"
-      }
-      throw new Error("Unable to navigate - calendar not found")
-    }
-    
-    throw new Error(`Unknown tool action: ${action}`)
-  }
 
   /**
    * Sends a tool execution result back to the agent.
@@ -144,14 +292,22 @@ export function ChatSidebar({ isOpen, onClose, calendarId }: ChatSidebarProps) {
       name: toolName,
     }
 
+    // Build the clientContext object from the AppContext
+    const backendClientContext = {
+      page: clientContext.page === 'postEditor' ? 'calendar' : clientContext.page,
+      component: clientContext.page === 'postEditor' ? 'postEditor' : undefined,
+      postId: clientContext.pageState?.postId || undefined,
+    }
+
     const response = await apiFetch("/api/ai/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         input: "",
         history: [...history, toolMessage],
-        calendarId,
+        calendarId: clientContext.calendarId || '',
         threadId,
+        clientContext: backendClientContext,
       }),
     })
 
@@ -277,14 +433,23 @@ export function ChatSidebar({ isOpen, onClose, calendarId }: ChatSidebarProps) {
         })
       }
 
+      // Build the clientContext object from the AppContext
+      // The backend expects: { page?, component?, postId? }
+      const backendClientContext = {
+        page: clientContext.page === 'postEditor' ? 'calendar' : clientContext.page,
+        component: clientContext.page === 'postEditor' ? 'postEditor' : undefined,
+        postId: clientContext.pageState?.postId || undefined,
+      }
+
       const response = await apiFetch("/api/ai/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           input: userMessage.content,
           history,
-          calendarId,
+          calendarId: clientContext.calendarId || '', // 2. Send the calendarId from context
           threadId,
+          clientContext: backendClientContext, // 3. Send the full context object
         }),
       })
 
@@ -384,28 +549,20 @@ export function ChatSidebar({ isOpen, onClose, calendarId }: ChatSidebarProps) {
               )}
             >
               <p className="text-sm whitespace-pre-wrap">{message.content}</p>
-              {/* Render tool calls as buttons */}
+                  {/* Render tool calls with custom UI */}
               {message.toolCalls && message.toolCalls.length > 0 && (
-                <div className="flex flex-col gap-2 mt-2">
-                  {message.toolCalls.map((toolCall) => {
-                    // Determine button label based on tool type
-                    const buttonLabel = toolCall.name === "navigate_to_calendar"
-                      ? (toolCall.args.label || "Open Calendar")
-                      : toolCall.args.label || "Execute"
-                    
+                    <div className="flex flex-col gap-3 mt-3">
+                      {message.toolCalls.map((toolCall) => {
                     const isExecuted = executedToolCalls.has(toolCall.id)
                     
                     return (
-                      <Button
+                      <ToolCallRenderer
                         key={toolCall.id}
-                        onClick={() => executeClientTool(toolCall)}
-                        variant="outline"
-                        size="sm"
-                        className="w-full justify-start"
-                        disabled={isLoading || isExecuted}
-                      >
-                        {isExecuted ? "✓ " + buttonLabel : buttonLabel}
-                      </Button>
+                        toolCall={toolCall}
+                        isExecuted={isExecuted}
+                        isLoading={isLoading}
+                        onExecute={executeClientTool}
+                      />
                     )
                   })}
                 </div>

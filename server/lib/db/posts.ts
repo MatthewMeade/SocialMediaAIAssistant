@@ -29,6 +29,34 @@ export async function getPosts(calendarId: string): Promise<Post[]> {
   }))
 }
 
+export async function getPostById(postId: string): Promise<Post | null> {
+  const supabase = await createClient()
+
+  const { data, error } = await supabase
+    .from("posts")
+    .select("*")
+    .eq("id", postId)
+    .single()
+
+  if (error || !data) {
+    console.error("[v0] Error loading post:", error)
+    return null
+  }
+
+  return {
+    id: data.id,
+    calendarId: data.calendar_id,
+    date: new Date(data.date),
+    caption: data.caption,
+    images: data.images || [],
+    platform: data.platform,
+    status: data.status,
+    authorId: data.author_id,
+    authorName: data.author_name,
+    comments: [], // Comments will be loaded separately if needed
+  }
+}
+
 export async function savePost(post: Omit<Post, "id"> & { id?: string }): Promise<Post | null> {
   const supabase = await createClient()
 
