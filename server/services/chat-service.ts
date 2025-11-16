@@ -1,9 +1,10 @@
-import { createAgent } from 'langchain'
+import { createAgent, dynamicSystemPromptMiddleware } from 'langchain'
 import type { IAiDataRepository } from '../ai-service/repository'
 import type { BaseChatModel } from '@langchain/core/language_models/chat_models'
 import type { DallEAPIWrapper } from '@langchain/openai'
 import type { ToolService } from './tool-service'
 import { getContextKeys, getToolsForContext } from '../ai-service/tool-manifest'
+import * as z from 'zod'
 
 /**
  * Context that is securely injected into the ChatService instance.
@@ -96,6 +97,81 @@ CRITICAL: You MUST use tools to help users. Do NOT just provide text responses w
 - Provide helpful, actionable feedback. Be friendly and professional.`
 
 /**
+ * Schema for the agent's configurable context.
+ * This allows us to pass clientContext and toolService to the middleware.
+ */
+const agentContextSchema = z.object({
+  clientContext: z.any().optional(),
+  toolService: z.custom<ToolService>(),
+})
+
+/**
+ * This function replaces the old 'buildSystemPrompt' logic.
+ * It reads the clientContext (passed via config.configurable) and fetches
+ * specific documents by ID, not by semantic search.
+ */
+async function loadContextualData(config: {
+  configurable?: {
+    clientContext?: any
+    toolService?: ToolService
+  }
+}): Promise<string> {
+  const { clientContext, toolService } = config.configurable || {}
+  const contextParts: string[] = []
+
+  if (!clientContext || !toolService) {
+    return '' // No context to inject
+  }
+
+  // 1. Post context (fetch by ID)
+  if (clientContext.postId) {
+    try {
+      const post = await toolService.getPost(clientContext.postId)
+      if (post) {
+        contextParts.push(
+          `**Current Post:**\nThe user is currently viewing/editing a post:\n- Post ID: ${post.id}\n- Caption: ${post.caption || '(No caption yet)'}\n- Platform: ${post.platform}\n- Status: ${post.status}\n- Date: ${post.date.toISOString().split('T')[0]}\n- Images: ${post.images.length} image(s)\n\nWhen the user asks about "this post" or "the current post", they are referring to this post. When using the apply_caption_to_open_post tool, you MUST use Post ID: ${post.id} as the postId parameter.`,
+        )
+      }
+    } catch (error) {
+      console.error('[ContextLoader] Error fetching post:', error)
+    }
+  }
+
+  // 2. Brand Voice context (fetch all for calendar)
+  try {
+    const brandRules = await toolService.getBrandRules()
+    const enabledRules = brandRules.filter((r) => r.enabled)
+    if (enabledRules.length > 0) {
+      const rulesText = enabledRules
+        .map((r) => `- **${r.title}:** ${r.description}`)
+        .join('\n')
+      contextParts.push(
+        `**Brand Voice Rules:**\nThe following brand voice rules are active for this calendar:\n${rulesText}\n\nAlways follow these rules when generating or suggesting content. When grading content, evaluate it against these rules.`,
+      )
+    } else {
+      contextParts.push(
+        '**Brand Voice Rules:**\nNo active brand voice rules are currently configured for this calendar.',
+      )
+    }
+  } catch (error) {
+    console.error('[ContextLoader] Error fetching brand rules:', error)
+  }
+
+  // 3. Add current date context
+  const currentDate = new Date()
+  const dateInfo = `\n\n**Current Date:** ${currentDate.toISOString().split('T')[0]} (${currentDate.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })})\nWhen users say "today", they mean ${currentDate.toISOString().split('T')[0]}. When they say "tomorrow", they mean ${new Date(currentDate.getTime() + 24 * 60 * 60 * 1000).toISOString().split('T')[0]}.`
+  contextParts.push(dateInfo)
+
+  // Return the final formatted string
+  if (contextParts.length === 0) {
+    return ''
+  }
+
+  // Format the context to be clearly delineated for the LLM
+  return `\n\n--- Contextual Information ---\n${contextParts.join('\n\n')}\n--- End of Context ---`
+}
+
+/**
  * Converts API message history to LangChain message format.
  */
 function convertHistoryToLangChainMessages(
@@ -136,8 +212,9 @@ function convertHistoryToLangChainMessages(
 async function invokeAgentWithTimeout(
   agent: ReturnType<typeof createAgent>,
   input: any[],
+  config?: { configurable?: any },
 ) {
-  const invokePromise = agent.invoke({ messages: input })
+  const invokePromise = agent.invoke({ messages: input }, config)
 
   return Promise.race([
     invokePromise,
@@ -268,120 +345,6 @@ export class ChatService {
   }
 
   /**
-   * Builds a dynamic system prompt that includes RAG context about what the user is viewing.
-   * This provides relevant information (posts, brand rules, etc.) based on the current page/context.
-   */
-  private async buildSystemPrompt(
-    clientContext?: {
-      page?: string
-      component?: string
-      postId?: string
-      pageState?: {
-        currentMonth?: number
-        currentYear?: number
-        postId?: string
-        [key: string]: any
-      }
-    },
-  ): Promise<string> {
-    const contextParts: string[] = []
-
-    // 1. Page-level context
-    if (clientContext?.page === 'calendar') {
-      let calendarContext = '**Current Context:**\nThe user is viewing their calendar page where they can see all their scheduled posts.'
-
-      // RAG: Include posts from the current month if available
-      if (clientContext.pageState?.currentMonth !== undefined) {
-        try {
-          const allPosts = await this.dependencies.toolService.getPosts()
-          const currentMonth = clientContext.pageState.currentMonth
-          const currentYear = clientContext.pageState.currentYear || new Date().getFullYear()
-
-          // Filter posts for the current month
-          const monthPosts = allPosts.filter((post) => {
-            const postDate = new Date(post.date)
-            return postDate.getMonth() === currentMonth && postDate.getFullYear() === currentYear
-          })
-
-          if (monthPosts.length > 0) {
-            const postsSummary = monthPosts
-              .slice(0, 10) // Limit to 10 posts to avoid token bloat
-              .map((post) => {
-                const date = new Date(post.date)
-                return `- ${date.toISOString().split('T')[0]}: ${post.caption ? post.caption.substring(0, 50) + '...' : '(No caption)'} [${post.status}]`
-              })
-              .join('\n')
-
-            calendarContext += `\n\n**Posts in current view (${monthPosts.length} total):**\n${postsSummary}${monthPosts.length > 10 ? `\n... and ${monthPosts.length - 10} more posts` : ''}`
-          } else {
-            calendarContext += '\n\n**Posts in current view:** No posts scheduled for this month.'
-          }
-        } catch (error) {
-          console.error('[ChatService] Error fetching posts for calendar context:', error)
-        }
-      }
-
-      contextParts.push(calendarContext)
-    } else if (clientContext?.page === 'brandVoice') {
-      contextParts.push(
-        '**Current Context:**\nThe user is viewing their brand voice settings page.',
-      )
-    }
-
-    // 2. Post context (RAG: fetch and include post details)
-    if (clientContext?.postId) {
-      try {
-        const post = await this.dependencies.toolService.getPost(
-          clientContext.postId,
-        )
-        if (post) {
-          contextParts.push(
-            `**Current Post:**\nThe user is currently viewing/editing a post:\n- Post ID: ${post.id}\n- Caption: ${post.caption || '(No caption yet)'}\n- Platform: ${post.platform}\n- Status: ${post.status}\n- Date: ${post.date.toISOString().split('T')[0]}\n- Images: ${post.images.length} image(s)\n\nWhen the user asks about "this post" or "the current post", they are referring to this post. When using the apply_caption_to_open_post tool, you MUST use Post ID: ${post.id} as the postId parameter.`,
-          )
-        }
-      } catch (error) {
-        console.error('[ChatService] Error fetching post for context:', error)
-      }
-    }
-
-    // 3. Brand Voice context (RAG: fetch and include brand rules)
-    // Always include brand rules - they're relevant for caption generation and content advice
-    try {
-      const brandRules = await this.dependencies.toolService.getBrandRules()
-      if (brandRules.length > 0) {
-        const enabledRules = brandRules.filter((r) => r.enabled)
-        if (enabledRules.length > 0) {
-          const rulesText = enabledRules
-            .map((r) => `- **${r.title}:** ${r.description}`)
-            .join('\n')
-          contextParts.push(
-            `**Brand Voice Rules:**\nThe following brand voice rules are active for this calendar:\n${rulesText}\n\nAlways follow these rules when generating or suggesting content. When grading content, evaluate it against these rules.`,
-          )
-        } else {
-          contextParts.push(
-            '**Brand Voice Rules:**\nNo active brand voice rules are currently configured for this calendar.',
-          )
-        }
-      }
-    } catch (error) {
-      console.error(
-        '[ChatService] Error fetching brand rules for context:',
-        error,
-      )
-    }
-
-    // Add current date for relative date calculations
-    const currentDate = new Date()
-    const dateInfo = `\n\n**Current Date:** ${currentDate.toISOString().split('T')[0]} (${currentDate.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })})\nWhen users say "today", they mean ${currentDate.toISOString().split('T')[0]}. When they say "tomorrow", they mean ${new Date(currentDate.getTime() + 24 * 60 * 60 * 1000).toISOString().split('T')[0]}.`
-
-    // Combine all context parts
-    const contextInfo =
-      contextParts.length > 0 ? '\n\n' + contextParts.join('\n\n') : ''
-
-    return systemPrompt + dateInfo + contextInfo
-  }
-
-  /**
    * Runs the chat agent with the provided input and history.
    * Determines which tools are needed based on clientContext, gets those tools
    * from the ToolService, and runs the agent.
@@ -407,59 +370,84 @@ export class ChatService {
       }
     },
   ): Promise<{ response: string; toolCalls?: any[] }> {
-    // 1. Determine which tools are needed based on clientContext
+    // 1. Get tools (same as before)
     const contextKeys = getContextKeys(clientContext)
-
-    // 2. Get the tool instances from the ToolService
     const tools = getToolsForContext(contextKeys, this.dependencies.toolService)
-
-    // 3. Add get_current_post tool if user is viewing a post
     if (clientContext?.postId) {
-      const currentPostTool = this.dependencies.toolService.createGetCurrentPostTool(
-        clientContext.postId,
+      tools.push(
+        this.dependencies.toolService.createGetCurrentPostTool(
+          clientContext.postId,
+        ),
       )
-      tools.push(currentPostTool)
     }
 
-    // 4. Build dynamic system prompt with context
-    const dynamicSystemPrompt = await this.buildSystemPrompt(clientContext)
-
-    // 5. Create the agent with the tools and dynamic prompt
+    // 2. Create the agent
     const agent = createAgent({
       model: this.dependencies.chatModel,
-      systemPrompt: dynamicSystemPrompt,
-      tools,
+      tools: tools,
+      systemPrompt: systemPrompt, // <-- Use the STATIC prompt
+      contextSchema: agentContextSchema, // <-- Pass the context schema
+
+      // 3. Add the middleware
+      middleware: [
+        dynamicSystemPromptMiddleware(async (_state, config) => {
+          // 'config.configurable' contains our 'clientContext' and 'toolService'
+
+          // Run your ID-based retrieval logic
+          const dynamicContext = await loadContextualData({
+            configurable: config.configurable as {
+              clientContext?: any
+              toolService?: ToolService
+            },
+          })
+
+          // Return the dynamic context string to be appended to the system prompt
+          return dynamicContext
+        }),
+      ],
     })
 
-    // 4. Convert history to LangChain format and add current input if present
+    // 4. Convert history
     const messages = convertHistoryToLangChainMessages(history)
-    if (input.trim()) {
-      messages.push({ role: 'user' as const, content: input })
-    }
 
-    // 5. Invoke agent and extract response
-    const response = await invokeAgentWithTimeout(agent, messages)
+    // 5. Invoke the agent
+    // We pass the full message list in the input
+    // We pass our context-aware data in the 'config.configurable' object
+    const response = await invokeAgentWithTimeout(
+      agent,
+      [...messages, { role: 'user' as const, content: input || '' }],
+      {
+        configurable: {
+          clientContext: clientContext,
+          toolService: this.dependencies.toolService,
+        },
+      },
+    )
 
-    // 6. If we sent a ToolMessage but the agent didn't generate a continuation,
-    // explicitly prompt it to continue
+    // 6. Handle response (same as your existing logic)
     const lastMessage = messages[messages.length - 1]
     const hasToolMessage = lastMessage && lastMessage.role === 'tool'
     const responseMessageCount = response.messages?.length || 0
     const inputMessageCount = messages.length
 
-    // Only use continuation prompt if agent truly didn't respond
-    // If clientContext has a postId, the agent should be able to see it in the next request
     if (hasToolMessage && responseMessageCount <= inputMessageCount) {
       const continuationMessages = [
         ...messages,
         {
           role: 'user' as const,
-          content: 'The tool action has been completed. Please continue with the next step.',
+          content:
+            'The tool action has been completed. Please continue with the next step.',
         },
       ]
       const continuationResponse = await invokeAgentWithTimeout(
         agent,
         continuationMessages,
+        {
+          configurable: {
+            clientContext: clientContext,
+            toolService: this.dependencies.toolService,
+          },
+        },
       )
       return extractAgentResponse(continuationResponse)
     }
