@@ -11,10 +11,10 @@ export type ContextKey = 'global' | 'calendar' | 'postEditor' | 'brandVoice'
  * Each method name corresponds to a factory method on ToolService that creates a tool.
  */
 const toolManifest: Record<ContextKey, string[]> = {
-  global: ['createNavigateToPageTool', 'createGenerateCaptionTool', 'createGetBrandRulesTool'],
-  calendar: ['createGetPostsTool', 'createGenerateCaptionTool', 'createGetBrandRulesTool'],
-  postEditor: ['createGenerateCaptionTool', 'createApplyCaptionTool', 'createGetBrandRulesTool'],
-  brandVoice: ['createGetBrandRulesTool'], // Brand rules tool available on brand voice page
+  global: ['createNavigateToPageTool', 'createGenerateCaptionTool', 'createGetBrandRulesTool', 'createGradeCaptionTool'],
+  calendar: ['createGetPostsTool', 'createGenerateCaptionTool', 'createGetBrandRulesTool', 'createGradeCaptionTool'],
+  postEditor: ['createGenerateCaptionTool', 'createApplyCaptionTool', 'createGetBrandRulesTool', 'createGradeCaptionTool'],
+  brandVoice: ['createGetBrandRulesTool', 'createGradeCaptionTool'], // Brand rules and grading tools available on brand voice page
 }
 
 /**

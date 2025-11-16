@@ -432,5 +432,65 @@ export class ToolService {
       },
     )
   }
+
+  /**
+   * Grades a caption against brand voice rules.
+   * Returns the brand score, rule breakdown, and suggestions.
+   */
+  async gradeCaption(caption: string): Promise<{
+    overall: number
+    rules: Array<{ ruleId: string; score: number; feedback: string }>
+    suggestions: string[]
+  }> {
+    const hasAccess = await canAccessCalendar(
+      this.context.userId,
+      this.context.calendarId,
+    )
+    if (!hasAccess) {
+      throw new Error('Forbidden: User does not have access to this calendar')
+    }
+
+    const brandRules = await this.dependencies.repo.getBrandRules(
+      this.context.calendarId,
+    )
+
+    const score = await getBrandVoiceScore(
+      caption,
+      brandRules,
+      this.dependencies.chatModel,
+    )
+
+    return {
+      overall: score.overall,
+      rules: score.rules,
+      suggestions: score.suggestions,
+    }
+  }
+
+  /**
+   * Creates a tool for grading a caption against brand voice rules.
+   * Useful when the AI needs to evaluate an existing caption.
+   */
+  createGradeCaptionTool() {
+    return tool(
+      async (input: { caption: string }) => {
+        const result = await this.gradeCaption(input.caption)
+        return {
+          overall: result.overall,
+          rules: result.rules,
+          suggestions: result.suggestions,
+          message: `Caption scored ${result.overall}/100. ${result.suggestions.length} suggestion(s) provided.`,
+        }
+      },
+      {
+        name: 'grade_caption',
+        description:
+          'Grades a caption against the brand voice rules. Returns the overall score (0-100), breakdown by rule, and actionable suggestions for improvement. Use this when users ask you to evaluate, grade, or review a caption.',
+        schema: z.object({
+          caption: z.string().describe('The caption text to grade against brand voice rules'),
+        }),
+      },
+    )
+  }
 }
 
