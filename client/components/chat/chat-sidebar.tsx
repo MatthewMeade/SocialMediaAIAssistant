@@ -619,8 +619,8 @@ export function ChatSidebar({ isOpen, onClose }: ChatSidebarProps) {
         default: {
           // This trick gives you a compile-time error if you
           // forget to handle a new tool type from your `ToolCall` discriminated union.
-          // eslint-disable-next-line @typescript-eslint/no-unused-vars
           const _exhaustiveCheck: never = toolCall as never
+          void _exhaustiveCheck // Mark as intentionally unused
           throw new Error(`Unknown client-side tool: ${(toolCall as any).name}`)
         }
       }

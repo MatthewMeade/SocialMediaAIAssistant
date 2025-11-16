@@ -22,13 +22,14 @@ export default function CalendarPage() {
       if (error) throw error
       if (!data) return null
       // Transform database response to match Calendar type
+      const dbData = data as any
       return {
-        id: data.id,
-        name: data.name,
-        slug: data.slug,
-        organizationId: data.organization_id ?? null,
-        color: data.color,
-        createdAt: new Date(data.created_at),
+        id: dbData.id,
+        name: dbData.name,
+        slug: dbData.slug,
+        organizationId: dbData.organization_id ?? null,
+        color: dbData.color,
+        createdAt: new Date(dbData.created_at),
       } as Calendar
     },
     enabled: !!calendarSlug,

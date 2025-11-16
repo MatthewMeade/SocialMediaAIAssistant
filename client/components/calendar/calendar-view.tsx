@@ -71,14 +71,14 @@ export function CalendarView({ currentUser, calendarId, calendarSlug, postToOpen
 
   const handleAddPost = async (date: Date) => {
     const tempId = `temp-${Date.now()}`
-    const newPost = {
+    const newPost: Post = {
       id: tempId,
       calendarId,
       date,
       caption: "",
       images: [],
-      platform: "instagram",
-      status: "draft",
+      platform: "instagram" as const,
+      status: "draft" as const,
       authorId: currentUser.id,
       authorName: currentUser.name,
       comments: [],
