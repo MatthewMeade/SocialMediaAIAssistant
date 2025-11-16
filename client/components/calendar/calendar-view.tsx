@@ -133,23 +133,33 @@ export function CalendarView({ currentUser, calendarId, calendarSlug, postToOpen
   }
 
   // Helper to parse date string (ISO, "today", "tomorrow", or day name)
+  // Sets time to noon (12:00 PM) in local timezone to avoid timezone issues
   const parseDate = (dateStr: string): Date => {
     const lower = dateStr.toLowerCase().trim()
     
+    // Helper to create a date at noon local time
+    const createDateAtNoon = (year: number, month: number, day: number): Date => {
+      const date = new Date(year, month, day, 12, 0, 0, 0)
+      return date
+    }
+    
     if (lower === "today") {
-      return new Date()
+      const today = new Date()
+      return createDateAtNoon(today.getFullYear(), today.getMonth(), today.getDate())
     }
     
     if (lower === "tomorrow") {
       const tomorrow = new Date()
       tomorrow.setDate(tomorrow.getDate() + 1)
-      return tomorrow
+      return createDateAtNoon(tomorrow.getFullYear(), tomorrow.getMonth(), tomorrow.getDate())
     }
 
     // Try to parse as ISO date (YYYY-MM-DD)
-    const isoDate = new Date(dateStr)
-    if (!isNaN(isoDate.getTime())) {
-      return isoDate
+    // Parse manually to avoid timezone issues with new Date(dateStr)
+    const isoMatch = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+    if (isoMatch) {
+      const [, year, month, day] = isoMatch
+      return createDateAtNoon(parseInt(year, 10), parseInt(month, 10) - 1, parseInt(day, 10))
     }
 
     // Try to parse as day name (e.g., "Monday", "monday")
@@ -164,11 +174,12 @@ export function CalendarView({ currentUser, calendarId, calendarSlug, postToOpen
       }
       const targetDate = new Date(today)
       targetDate.setDate(today.getDate() + daysUntil)
-      return targetDate
+      return createDateAtNoon(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate())
     }
 
-    // Default to today if parsing fails
-    return new Date()
+    // Default to today at noon if parsing fails
+    const today = new Date()
+    return createDateAtNoon(today.getFullYear(), today.getMonth(), today.getDate())
   }
 
   // Listen for create-post events from AI chat
