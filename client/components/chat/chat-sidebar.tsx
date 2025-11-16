@@ -69,36 +69,31 @@ interface ToolCallUIProps {
   isExecuted: boolean
   isLoading: boolean
   onExecute: (toolCall: ToolCall) => void
+  aiMessage?: string // Optional AI message to display before the tool call
 }
 
 function CaptionSuggestionCard({ toolCall, isExecuted, isLoading, onExecute }: ToolCallUIProps) {
   if (toolCall.name !== "apply_caption_to_open_post") return null
 
   const { caption } = toolCall.args
-  const preview = caption.length > 150 ? caption.substring(0, 150) + "..." : caption
 
   return (
     <Card className="border-primary/20 bg-primary/5">
-      <CardHeader className="pb-3">
+      <CardHeader className="pb-1.5">
         <div className="flex items-center gap-2">
           <FileText className="h-4 w-4 text-primary" />
           <CardTitle className="text-sm font-medium">Caption Suggestion</CardTitle>
         </div>
       </CardHeader>
-      <CardContent className="pb-3">
+      <CardContent className="pb-1.5">
         <div className="space-y-2">
           <p className="text-sm text-muted-foreground">Suggested caption for your post:</p>
-          <div className="rounded-md border bg-background p-3">
-            <p className="text-sm whitespace-pre-wrap">{preview}</p>
-            {caption.length > 150 && (
-              <p className="text-xs text-muted-foreground mt-2">
-                {caption.length} characters total
-              </p>
-            )}
+          <div className="rounded-md border bg-background p-2">
+            <p className="text-sm whitespace-pre-wrap">{caption}</p>
           </div>
         </div>
       </CardContent>
-      <CardFooter className="pt-0">
+      <CardFooter className="pt-0 px-1.5 pb-1.5">
         <Button
           onClick={() => onExecute(toolCall)}
           disabled={isLoading || isExecuted}
@@ -129,7 +124,7 @@ function NavigationButton({ toolCall, isExecuted, isLoading, onExecute }: ToolCa
 
   return (
     <Card className="border-border">
-      <CardContent className="p-4">
+      <CardContent className="p-1.5">
         <Button
           onClick={() => onExecute(toolCall)}
           disabled={isLoading || isExecuted}
@@ -174,18 +169,18 @@ function CreatePostCard({ toolCall, isExecuted, isLoading, onExecute }: ToolCall
 
   return (
     <Card className="border-primary/20 bg-primary/5">
-      <CardHeader className="pb-3">
+      <CardHeader className="pb-1.5">
         <div className="flex items-center gap-2">
           <Plus className="h-4 w-4 text-primary" />
           <CardTitle className="text-sm font-medium">Create New Post</CardTitle>
         </div>
       </CardHeader>
-      <CardContent className="pb-3">
+      <CardContent className="pb-1.5">
         <p className="text-sm text-muted-foreground">
           Create a new post scheduled for <span className="font-medium text-foreground">{formattedDate}</span>
         </p>
       </CardContent>
-      <CardFooter className="pt-0">
+      <CardFooter className="pt-0 px-1.5 pb-1.5">
         <Button
           onClick={() => onExecute(toolCall)}
           disabled={isLoading || isExecuted}
@@ -214,18 +209,18 @@ function OpenPostCard({ toolCall, isExecuted, isLoading, onExecute }: ToolCallUI
 
   return (
     <Card className="border-primary/20 bg-primary/5">
-      <CardHeader className="pb-3">
+      <CardHeader className="pb-1.5">
         <div className="flex items-center gap-2">
           <FileText className="h-4 w-4 text-primary" />
           <CardTitle className="text-sm font-medium">Open Post</CardTitle>
         </div>
       </CardHeader>
-      <CardContent className="pb-3">
+      <CardContent className="pb-1.5">
         <p className="text-sm text-muted-foreground">
           Open this post in the editor to view or edit it
         </p>
       </CardContent>
-      <CardFooter className="pt-0">
+      <CardFooter className="pt-0 px-1.5 pb-1.5">
         <Button
           onClick={() => onExecute(toolCall)}
           disabled={isLoading || isExecuted}
@@ -252,7 +247,7 @@ function OpenPostCard({ toolCall, isExecuted, isLoading, onExecute }: ToolCallUI
 function GenericToolCard({ toolCall, isExecuted, isLoading, onExecute }: ToolCallUIProps) {
   return (
     <Card className="border-border">
-      <CardContent className="p-4">
+      <CardContent className="p-1.5">
         <div className="space-y-2">
           <p className="text-sm font-medium">{toolCall.name}</p>
           <Button
@@ -277,20 +272,45 @@ function GenericToolCard({ toolCall, isExecuted, isLoading, onExecute }: ToolCal
   )
 }
 
-function ToolCallRenderer({ toolCall, isExecuted, isLoading, onExecute }: ToolCallUIProps) {
-  if (toolCall.name === "apply_caption_to_open_post") {
-    return <CaptionSuggestionCard toolCall={toolCall} isExecuted={isExecuted} isLoading={isLoading} onExecute={onExecute} />
+// Client-side messages that appear above tool calls to guide the user
+const TOOL_CALL_MESSAGES: Record<string, string> = {
+  create_post: "Let's get started! Click the button below to create and open the post editor.",
+  open_post: "I'll help you open that post. Click the button below to view it in the editor.",
+  apply_caption_to_open_post: "I've generated a caption for your post. Review it below and click to apply it to your post.",
+  navigate_to_calendar: "Let me take you to your calendar. Click the button below to navigate there.",
+}
+
+function ToolCallRenderer({ toolCall, isExecuted, isLoading, onExecute, aiMessage }: ToolCallUIProps) {
+  const cardContent = (() => {
+    if (toolCall.name === "apply_caption_to_open_post") {
+      return <CaptionSuggestionCard toolCall={toolCall} isExecuted={isExecuted} isLoading={isLoading} onExecute={onExecute} />
+    }
+    if (toolCall.name === "create_post") {
+      return <CreatePostCard toolCall={toolCall} isExecuted={isExecuted} isLoading={isLoading} onExecute={onExecute} />
+    }
+    if (toolCall.name === "open_post") {
+      return <OpenPostCard toolCall={toolCall} isExecuted={isExecuted} isLoading={isLoading} onExecute={onExecute} />
+    }
+    if (toolCall.name === "navigate_to_calendar") {
+      return <NavigationButton toolCall={toolCall} isExecuted={isExecuted} isLoading={isLoading} onExecute={onExecute} />
+    }
+    return <GenericToolCard toolCall={toolCall} isExecuted={isExecuted} isLoading={isLoading} onExecute={onExecute} />
+  })()
+
+  // Use client-side message if available, otherwise fall back to AI message
+  const message = TOOL_CALL_MESSAGES[toolCall.name] || aiMessage
+
+  // Show message above the tool call card if available
+  if (message) {
+    return (
+      <div className="space-y-2">
+        <p className="text-sm text-muted-foreground">{message}</p>
+        {cardContent}
+      </div>
+    )
   }
-  if (toolCall.name === "create_post") {
-    return <CreatePostCard toolCall={toolCall} isExecuted={isExecuted} isLoading={isLoading} onExecute={onExecute} />
-  }
-  if (toolCall.name === "open_post") {
-    return <OpenPostCard toolCall={toolCall} isExecuted={isExecuted} isLoading={isLoading} onExecute={onExecute} />
-  }
-  if (toolCall.name === "navigate_to_calendar") {
-    return <NavigationButton toolCall={toolCall} isExecuted={isExecuted} isLoading={isLoading} onExecute={onExecute} />
-  }
-  return <GenericToolCard toolCall={toolCall} isExecuted={isExecuted} isLoading={isLoading} onExecute={onExecute} />
+
+  return cardContent
 }
 
 export function ChatSidebar({ isOpen, onClose }: ChatSidebarProps) {
@@ -664,28 +684,15 @@ export function ChatSidebar({ isOpen, onClose }: ChatSidebarProps) {
       const data = await response.json()
       
       // Add agent's response (may include tool calls for client-side execution)
-      // When tool calls are present, don't add the returnDirect result content
-      // The tool result is handled by the button click, which sends a ToolMessage
-      if (data.toolCalls && data.toolCalls.length > 0) {
-        setMessages((prev) => [
-          ...prev,
-          {
-            role: "assistant",
-            content: "", // Empty content for tool calls - button will be rendered
-            toolCalls: data.toolCalls,
-          },
-        ])
-      } else {
-        // Regular response without tool calls
-        setMessages((prev) => [
-          ...prev,
-          {
-            role: "assistant",
-            content: data.response || "",
-            toolCalls: data.toolCalls,
-          },
-        ])
-      }
+      // Include the response content even when tool calls are present, so the AI can provide context
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          content: data.response || "",
+          toolCalls: data.toolCalls,
+        },
+      ])
     } catch (error) {
       // Show error message to user
       setMessages((prev) => [
@@ -752,10 +759,14 @@ export function ChatSidebar({ isOpen, onClose }: ChatSidebarProps) {
                   : "bg-muted text-muted-foreground",
               )}
             >
-              <p className="text-sm whitespace-pre-wrap">{message.content}</p>
+                  {/* Show message content only if there are no tool calls */}
+                  {/* When tool calls are present, the message will be shown by ToolCallRenderer */}
+                  {(!message.toolCalls || message.toolCalls.length === 0) && message.content && (
+                    <p className="text-sm whitespace-pre-wrap">{message.content}</p>
+                  )}
                   {/* Render tool calls with custom UI */}
               {message.toolCalls && message.toolCalls.length > 0 && (
-                    <div className="flex flex-col gap-3 mt-3">
+                    <div className="flex flex-col gap-3">
                       {message.toolCalls.map((toolCall) => {
                     const isExecuted = executedToolCalls.has(toolCall.id)
                     
@@ -766,6 +777,7 @@ export function ChatSidebar({ isOpen, onClose }: ChatSidebarProps) {
                         isExecuted={isExecuted}
                         isLoading={isLoading}
                         onExecute={executeClientTool}
+                        aiMessage={undefined} // Don't pass AI message - we use client-side messages instead
                       />
                     )
                   })}
