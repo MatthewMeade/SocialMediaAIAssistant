@@ -1,6 +1,5 @@
-import { useState, useEffect } from "react"
+import { useState } from "react"
 import { useNavigate, useLocation, useParams } from "react-router-dom"
-import { useQueryClient } from "@tanstack/react-query"
 import {
   Calendar,
   ImageIcon,
@@ -24,23 +23,13 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { createClient } from "@/lib/supabase/client"
 import { CreateCalendarDialog } from "@/components/settings/create-calendar-dialog"
-import { apiPost } from "@/lib/api-client"
-import { ApiRoutes } from "@/lib/api-routes"
-import { useAuth } from "@/lib/auth/context"
+import { useCalendars } from "@/lib/hooks/use-calendars" // Import calendars hook
+import { useProfile } from "@/lib/hooks/use-profile" // Import profile hook
+import type { Calendar as CalendarType } from "@/lib/types"
 
 interface AppSidebarProps {
-  calendars: Array<{
-    id: string
-    name: string
-    slug: string
-    color: string
-  }>
-  currentCalendar: {
-    id: string
-    name: string
-    slug: string
-    color: string
-  } | undefined
+  calendars: CalendarType[]
+  currentCalendar: CalendarType | undefined
 }
 
 const sections = [
@@ -53,45 +42,12 @@ export function AppSidebar({ calendars, currentCalendar }: AppSidebarProps) {
   const navigate = useNavigate()
   const location = useLocation()
   const { calendarSlug } = useParams()
-  const queryClient = useQueryClient()
   const [isCollapsed, setIsCollapsed] = useState(false)
   const [showCreateCalendar, setShowCreateCalendar] = useState(false)
-  const { user } = useAuth()
-  const [userProfile, setUserProfile] = useState<{
-    name: string
-    email: string
-    avatar_url: string | null
-  } | null>(null)
 
-  useEffect(() => {
-    const loadUserProfile = async () => {
-      if (!user) return
-
-      const supabase = createClient()
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("name, email, avatar_url")
-        .eq("id", user.id)
-        .single<{ name: string | null; email: string | null; avatar_url: string | null }>()
-
-      if (profile) {
-        setUserProfile({
-          name: profile.name || user.user_metadata?.name || user.email?.split("@")[0] || "User",
-          email: profile.email || user.email || "",
-          avatar_url: profile.avatar_url,
-        })
-      } else {
-        // Fallback to auth user data if profile doesn't exist
-        setUserProfile({
-          name: user.user_metadata?.name || user.email?.split("@")[0] || "User",
-          email: user.email || "",
-          avatar_url: null,
-        })
-      }
-    }
-
-    loadUserProfile()
-  }, [user])
+  // Use the new hooks
+  const { createCalendar } = useCalendars()
+  const { profile } = useProfile()
 
   const currentSection = location.pathname.split("/").pop() || "calendar"
 
@@ -107,14 +63,7 @@ export function AppSidebar({ calendars, currentCalendar }: AppSidebarProps) {
 
   const handleCreateCalendar = async (data: { name: string; color: string }) => {
     try {
-      const newCalendar = await apiPost<{ id: string; name: string; slug: string; color: string }>(
-        ApiRoutes.CALENDARS,
-        data,
-      )
-
-      // Invalidate calendars query to refresh the list
-      await queryClient.invalidateQueries({ queryKey: ["calendars"] })
-      
+      const newCalendar = await createCalendar.mutateAsync(data)
       navigate(`/${newCalendar.slug}/calendar`)
     } catch (error) {
       console.error("Error creating calendar:", error)
@@ -127,6 +76,14 @@ export function AppSidebar({ calendars, currentCalendar }: AppSidebarProps) {
     await supabase.auth.signOut()
     navigate("/login")
   }
+
+  const userProfile = profile
+    ? {
+        name: profile.name || profile.email?.split("@")[0] || "User",
+        email: profile.email || "",
+        avatar_url: profile.avatar_url,
+      }
+    : null
 
   return (
     <>

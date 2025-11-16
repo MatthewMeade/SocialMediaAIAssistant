@@ -13,6 +13,7 @@ import profileRouter from "./routes/profile"
 import aiRouter from './routes/ai'
 import uploadRouter from './routes/upload'
 import mediaRouter from './routes/media'
+import organizationRouter from './routes/organization' // Import new route
 
 
 const app = new Hono()
@@ -39,6 +40,7 @@ app.route("/api/profile", profileRouter)
 app.route('/api/ai', aiRouter)
 app.route('/api/upload', uploadRouter)
 app.route('/api/media', mediaRouter)
+app.route('/api/organization', organizationRouter) // Add new route
 
 
 const port = Number(process.env.PORT) || 3001

@@ -10,11 +10,11 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Separator } from "@/components/ui/separator"
-import { createClient } from "@/lib/supabase/client"
-import { apiGet, apiPost, apiPut } from "@/lib/api-client"
+import { apiPost } from "@/lib/api-client"
 import { ApiRoutes } from "@/lib/api-routes"
 import { useToast } from "@/hooks/use-toast"
-import { useQuery } from "@tanstack/react-query"
+import { useProfile, type ProfileUpdate } from "@/lib/hooks/use-profile"
+import { useCalendars } from "@/lib/hooks/use-calendars"
 
 interface ProfileViewProps {
   currentUser: { id: string; name: string; email: string }
@@ -23,81 +23,58 @@ interface ProfileViewProps {
 export function ProfileView({ currentUser }: ProfileViewProps) {
   const { toast } = useToast()
   const { theme, setTheme } = useTheme()
-  const [loading, setLoading] = useState(true)
+  const { profile, isLoading: isLoadingProfile, updateProfile } = useProfile()
+  const { calendars, isLoading: isLoadingCalendars } = useCalendars()
+
   const [savingProfile, setSavingProfile] = useState(false)
   const [savingAppearance, setSavingAppearance] = useState(false)
   const [uploadingAvatar, setUploadingAvatar] = useState(false)
 
-  const [profile, setProfile] = useState({
+  const [formState, setFormState] = useState({
     name: currentUser.name,
     email: currentUser.email,
     bio: "",
     avatar_url: "",
     timezone: "America/New_York",
     language: "en",
-  })
-
-  const [appearance, setAppearance] = useState({
     theme: theme || "system",
     compact_mode: false,
   })
 
   useEffect(() => {
-    const loadProfile = async () => {
-      try {
-        const supabase = createClient()
-        const { data, error } = await supabase
-          .from("profiles")
-          .select("*")
-          .eq("id", currentUser.id)
-          .single()
-
-        if (error && error.code !== 'PGRST116') { // PGRST116 is "not found" which is OK for new users
-          console.error("Error loading profile:", error)
-        }
-
-        if (data && typeof data === 'object') {
-          const profileData = data as {
-            name: string
-            email: string
-            bio: string | null
-            avatar_url: string | null
-            timezone: string | null
-            language: string | null
-            theme: string | null
-            compact_mode: boolean | null
-          }
-          setProfile({
-            name: profileData.name || currentUser.name,
-            email: profileData.email || currentUser.email,
-            bio: profileData.bio || "",
-            avatar_url: profileData.avatar_url || "",
-            timezone: profileData.timezone || "America/New_York",
-            language: profileData.language || "en",
-          })
-          setAppearance({
-            theme: profileData.theme || theme || "system",
-            compact_mode: profileData.compact_mode || false,
-          })
-          // Apply theme if it's different from current
-          if (profileData.theme && profileData.theme !== theme) {
-            setTheme(profileData.theme)
-          }
-        }
-      } catch (error) {
-        console.error("Error loading profile:", error)
-      } finally {
-        setLoading(false)
+    if (profile) {
+      setFormState({
+        name: profile.name || currentUser.name,
+        email: profile.email || currentUser.email,
+        bio: profile.bio || "",
+        avatar_url: profile.avatar_url || "",
+        timezone: profile.timezone || "America/New_York",
+        language: profile.language || "en",
+        theme: profile.theme || theme || "system",
+        compact_mode: profile.compact_mode || false,
+      })
+      // Apply theme if it's different from current
+      if (profile.theme && profile.theme !== theme) {
+        setTheme(profile.theme)
       }
     }
+  }, [profile, currentUser.name, currentUser.email, theme, setTheme])
 
-    loadProfile()
-  }, [currentUser.id, currentUser.name, currentUser.email, theme, setTheme])
+  const handleProfileChange = (field: keyof typeof formState, value: string | boolean) => {
+    setFormState((prev) => ({ ...prev, [field]: value }))
+  }
 
   const handleSaveProfile = async () => {
     setSavingProfile(true)
     try {
-      await apiPut(ApiRoutes.PROFILE, profile)
+      const updates: ProfileUpdate = {
+        name: formState.name,
+        email: formState.email,
+        bio: formState.bio,
+        timezone: formState.timezone,
+        language: formState.language,
+      }
+      await updateProfile.mutateAsync(updates)
 
       toast({
         title: "Profile saved",
@@ -118,8 +95,12 @@ export function ProfileView({ currentUser }: ProfileViewProps) {
   const handleSaveAppearance = async () => {
     setSavingAppearance(true)
     try {
-      setTheme(appearance.theme)
-      await apiPut(ApiRoutes.PROFILE, appearance)
+      setTheme(formState.theme)
+      const updates: ProfileUpdate = {
+        theme: formState.theme,
+        compact_mode: formState.compact_mode,
+      }
+      await updateProfile.mutateAsync(updates)
 
       toast({
         title: "Appearance saved",
@@ -136,17 +117,6 @@ export function ProfileView({ currentUser }: ProfileViewProps) {
       setSavingAppearance(false)
     }
   }
-
-  // Get user's calendars to use for avatar upload (calendarId is required)
-  const { data: calendars } = useQuery({
-    queryKey: ["calendars"],
-    queryFn: async () => {
-      return apiGet<Array<{ id: string; name: string; slug: string; color: string; createdAt: string }>>(
-        ApiRoutes.CALENDARS,
-      )
-    },
-    retry: 1,
-  })
 
   const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -170,9 +140,9 @@ export function ProfileView({ currentUser }: ProfileViewProps) {
       formData.append("calendarId", firstCalendar.id)
 
       const { url } = await apiPost<{ url: string }>(ApiRoutes.UPLOAD, formData)
-      await apiPut(ApiRoutes.PROFILE, { avatar_url: url })
+      await updateProfile.mutateAsync({ avatar_url: url })
 
-      setProfile({ ...profile, avatar_url: url })
+      setFormState({ ...formState, avatar_url: url })
       toast({
         title: "Avatar updated",
         description: "Your profile picture has been updated.",
@@ -189,7 +159,7 @@ export function ProfileView({ currentUser }: ProfileViewProps) {
     }
   }
 
-  if (loading) {
+  if (isLoadingProfile || isLoadingCalendars) {
     return <div className="flex h-full items-center justify-center">Loading...</div>
   }
 
@@ -213,8 +183,8 @@ export function ProfileView({ currentUser }: ProfileViewProps) {
             <CardContent className="space-y-6">
               <div className="flex items-center gap-6">
                 <Avatar className="h-20 w-20">
-                  <AvatarImage src={profile.avatar_url || "/placeholder.svg"} />
-                  <AvatarFallback>{profile.name?.[0]?.toUpperCase() || "U"}</AvatarFallback>
+                  <AvatarImage src={formState.avatar_url || "/placeholder.svg"} />
+                  <AvatarFallback>{formState.name?.[0]?.toUpperCase() || "U"}</AvatarFallback>
                 </Avatar>
                 <div>
                   <Label htmlFor="avatar-upload">
@@ -243,8 +213,8 @@ export function ProfileView({ currentUser }: ProfileViewProps) {
                   <Label htmlFor="name">Full Name</Label>
                   <Input
                     id="name"
-                    value={profile.name}
-                    onChange={(e) => setProfile({ ...profile, name: e.target.value })}
+                    value={formState.name}
+                    onChange={(e) => handleProfileChange("name", e.target.value)}
                   />
                 </div>
 
@@ -253,8 +223,8 @@ export function ProfileView({ currentUser }: ProfileViewProps) {
                   <Input
                     id="email"
                     type="email"
-                    value={profile.email}
-                    onChange={(e) => setProfile({ ...profile, email: e.target.value })}
+                    value={formState.email}
+                    onChange={(e) => handleProfileChange("email", e.target.value)}
                   />
                 </div>
 
@@ -262,8 +232,8 @@ export function ProfileView({ currentUser }: ProfileViewProps) {
                   <Label htmlFor="bio">Bio</Label>
                   <Textarea
                     id="bio"
-                    value={profile.bio}
-                    onChange={(e) => setProfile({ ...profile, bio: e.target.value })}
+                    value={formState.bio}
+                    onChange={(e) => handleProfileChange("bio", e.target.value)}
                     className="min-h-[100px] resize-none"
                   />
                   <p className="text-xs text-muted-foreground">
@@ -275,8 +245,8 @@ export function ProfileView({ currentUser }: ProfileViewProps) {
                   <div className="space-y-2">
                     <Label htmlFor="timezone">Timezone</Label>
                     <Select
-                      value={profile.timezone}
-                      onValueChange={(value) => setProfile({ ...profile, timezone: value })}
+                      value={formState.timezone}
+                      onValueChange={(value) => handleProfileChange("timezone", value)}
                     >
                       <SelectTrigger id="timezone">
                         <SelectValue />
@@ -296,8 +266,8 @@ export function ProfileView({ currentUser }: ProfileViewProps) {
                   <div className="space-y-2">
                     <Label htmlFor="language">Language</Label>
                     <Select
-                      value={profile.language}
-                      onValueChange={(value) => setProfile({ ...profile, language: value })}
+                      value={formState.language}
+                      onValueChange={(value) => handleProfileChange("language", value)}
                     >
                       <SelectTrigger id="language">
                         <SelectValue />
@@ -334,8 +304,8 @@ export function ProfileView({ currentUser }: ProfileViewProps) {
                 <div className="space-y-2">
                   <Label htmlFor="theme">Theme</Label>
                   <Select
-                    value={appearance.theme}
-                    onValueChange={(value) => setAppearance({ ...appearance, theme: value })}
+                    value={formState.theme}
+                    onValueChange={(value) => handleProfileChange("theme", value)}
                   >
                     <SelectTrigger id="theme">
                       <SelectValue />
@@ -358,8 +328,8 @@ export function ProfileView({ currentUser }: ProfileViewProps) {
                   </div>
                   <Switch
                     id="compact-mode"
-                    checked={appearance.compact_mode}
-                    onCheckedChange={(checked) => setAppearance({ ...appearance, compact_mode: checked })}
+                    checked={formState.compact_mode}
+                    onCheckedChange={(checked) => handleProfileChange("compact_mode", checked)}
                   />
                 </div>
               </div>

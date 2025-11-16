@@ -1,12 +1,10 @@
 import { useState, createContext, useContext, useCallback, useMemo, useEffect, startTransition } from "react"
 import { Outlet, useParams, Navigate, useLocation } from "react-router-dom"
-import { useQuery } from "@tanstack/react-query"
 import { SidebarProvider } from "../ui/sidebar"
 import { AppSidebar } from "./app-sidebar"
 import { ChatSidebar } from "../chat/chat-sidebar"
 import { ChatToggleButton } from "../chat/chat-toggle-button"
-import { apiGet } from "../../lib/api-client"
-import { ApiRoutes } from "../../lib/api-routes"
+import { useCalendars } from "@/lib/hooks/use-calendars" // Import the new hook
 
 // 1. Define the context state
 interface IClientContext {
@@ -47,22 +45,11 @@ export default function AppLayout() {
     setPageState(newPageState)
   }, [])
 
-  const { data: calendars, isLoading, error } = useQuery({
-    queryKey: ["calendars"],
-    queryFn: async () => {
-      return apiGet<Array<{ id: string; name: string; slug: string; color: string; createdAt: string }>>(
-        ApiRoutes.CALENDARS,
-      )
-    },
-    retry: 1,
-  })
+  // Use the new hook to fetch calendars
+  const { calendars, isLoading, error } = useCalendars()
 
-  // Map API response to match expected format (do this before early returns)
-  const mappedCalendars =
-    calendars?.map((c) => ({
-      ...c,
-      created_at: c.createdAt,
-    })) || []
+  // Map to the format expected by AppSidebar (already done by the hook)
+  const mappedCalendars = calendars
 
   const currentCalendar = mappedCalendars?.find((c) => c.slug === calendarSlug)
 

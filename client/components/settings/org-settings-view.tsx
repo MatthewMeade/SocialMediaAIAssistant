@@ -1,58 +1,35 @@
 import type React from "react"
 
-import { useState, useEffect } from "react"
+import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { UserPlus, Trash2 } from "lucide-react"
 import type { Organization } from "@/lib/types"
-import { createClient } from "@/lib/supabase/client"
 import { useToast } from "@/hooks/use-toast"
-import { apiPost, apiDelete } from "@/lib/api-client"
+import { useOrganization } from "@/lib/hooks/use-organization" // Import the new hook
 
 interface OrgSettingsViewProps {
   organization: Organization
   currentUserId: string
 }
 
-interface Member {
-  id: string
-  user_id: string
-  role: string
-  profiles: {
-    id: string
-    name: string
-    email: string
-  }
-}
-
 export function OrgSettingsView({ organization, currentUserId }: OrgSettingsViewProps) {
   const { toast } = useToast()
   const [inviteEmail, setInviteEmail] = useState("")
   const [inviteRole, _setInviteRole] = useState<"admin" | "member">("member")
-  const [members, setMembers] = useState<Member[]>([])
-  const [loading, setLoading] = useState(true)
   const [inviting, setInviting] = useState(false)
 
+  // Use the new hook for data
+  const {
+    members,
+    isLoadingMembers,
+    inviteMember,
+    removeMember,
+  } = useOrganization()
+
   const isOwner = organization.ownerId === currentUserId
-
-  useEffect(() => {
-    const loadMembers = async () => {
-      const supabase = createClient()
-      const { data } = await supabase
-        .from("organization_members")
-        .select("*, profiles(*)")
-        .eq("organization_id", organization.id)
-
-      if (data) {
-        setMembers(data as Member[])
-      }
-      setLoading(false)
-    }
-
-    loadMembers()
-  }, [organization.id])
 
   const handleInvite = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -60,7 +37,7 @@ export function OrgSettingsView({ organization, currentUserId }: OrgSettingsView
 
     setInviting(true)
     try {
-      const result = await apiPost<{ type: string }>(`/api/organizations/${organization.id}/members`, {
+      const result = await inviteMember.mutateAsync({
         email: inviteEmail,
         role: inviteRole,
       })
@@ -92,7 +69,7 @@ export function OrgSettingsView({ organization, currentUserId }: OrgSettingsView
 
   const handleRemoveMember = async (memberId: string) => {
     try {
-      await apiDelete(`/api/organizations/${organization.id}/members?memberId=${memberId}`)
+      await removeMember.mutateAsync(memberId)
 
       toast({
         title: "Member removed",
@@ -106,10 +83,6 @@ export function OrgSettingsView({ organization, currentUserId }: OrgSettingsView
         variant: "destructive",
       })
     }
-  }
-
-  if (loading) {
-    return <div className="flex h-full items-center justify-center">Loading...</div>
   }
 
   return (
@@ -160,7 +133,10 @@ export function OrgSettingsView({ organization, currentUserId }: OrgSettingsView
             )}
 
             <div className="space-y-2">
-              {members.map((member) => (
+              {isLoadingMembers ? (
+                <p className="text-sm text-muted-foreground">Loading members...</p>
+              ) : (
+                members.map((member) => (
                 <div
                   key={member.id}
                   className="flex items-center justify-between rounded-lg border border-border bg-card p-3"
@@ -192,7 +168,8 @@ export function OrgSettingsView({ organization, currentUserId }: OrgSettingsView
                     )}
                   </div>
                 </div>
-              ))}
+                ))
+              )}
             </div>
           </CardContent>
         </Card>
