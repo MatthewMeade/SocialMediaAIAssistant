@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react"
 import { useNavigate, useParams } from "react-router-dom"
-import { X, Send, Sparkles, Check, Calendar, FileText } from "lucide-react"
+import { X, Send, Sparkles, Check, Calendar, FileText, Plus } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
@@ -33,6 +33,22 @@ type ToolCall =
     args: {
       postId: string
       caption: string
+    }
+  }
+  | {
+    id: string
+    name: "create_post"
+    args: {
+      date: string
+      label?: string
+    }
+  }
+  | {
+    id: string
+    name: "open_post"
+    args: {
+      postId: string
+      label?: string
     }
   }
   | {
@@ -138,6 +154,101 @@ function NavigationButton({ toolCall, isExecuted, isLoading, onExecute }: ToolCa
   )
 }
 
+function CreatePostCard({ toolCall, isExecuted, isLoading, onExecute }: ToolCallUIProps) {
+  if (toolCall.name !== "create_post") return null
+
+  const { date } = toolCall.args
+  const formattedDate = (() => {
+    if (!date) return "selected date"
+    const lower = date.toLowerCase()
+    if (lower === "today") return "today"
+    if (lower === "tomorrow") return "tomorrow"
+    try {
+      const d = new Date(date)
+      if (!isNaN(d.getTime())) {
+        return d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })
+      }
+    } catch { }
+    return date
+  })()
+
+  return (
+    <Card className="border-primary/20 bg-primary/5">
+      <CardHeader className="pb-3">
+        <div className="flex items-center gap-2">
+          <Plus className="h-4 w-4 text-primary" />
+          <CardTitle className="text-sm font-medium">Create New Post</CardTitle>
+        </div>
+      </CardHeader>
+      <CardContent className="pb-3">
+        <p className="text-sm text-muted-foreground">
+          Create a new post scheduled for <span className="font-medium text-foreground">{formattedDate}</span>
+        </p>
+      </CardContent>
+      <CardFooter className="pt-0">
+        <Button
+          onClick={() => onExecute(toolCall)}
+          disabled={isLoading || isExecuted}
+          className="w-full"
+          size="sm"
+        >
+          {isExecuted ? (
+            <>
+              <Check className="h-4 w-4 mr-2" />
+              Post Created
+            </>
+          ) : (
+            <>
+              <Plus className="h-4 w-4 mr-2" />
+              Create Post
+            </>
+          )}
+        </Button>
+      </CardFooter>
+    </Card>
+  )
+}
+
+function OpenPostCard({ toolCall, isExecuted, isLoading, onExecute }: ToolCallUIProps) {
+  if (toolCall.name !== "open_post") return null
+
+  return (
+    <Card className="border-primary/20 bg-primary/5">
+      <CardHeader className="pb-3">
+        <div className="flex items-center gap-2">
+          <FileText className="h-4 w-4 text-primary" />
+          <CardTitle className="text-sm font-medium">Open Post</CardTitle>
+        </div>
+      </CardHeader>
+      <CardContent className="pb-3">
+        <p className="text-sm text-muted-foreground">
+          Open this post in the editor to view or edit it
+        </p>
+      </CardContent>
+      <CardFooter className="pt-0">
+        <Button
+          onClick={() => onExecute(toolCall)}
+          disabled={isLoading || isExecuted}
+          className="w-full"
+          size="sm"
+        >
+          {isExecuted ? (
+            <>
+              <Check className="h-4 w-4 mr-2" />
+              Opened
+            </>
+          ) : (
+            <>
+              <FileText className="h-4 w-4 mr-2" />
+              Open
+            </>
+          )}
+        </Button>
+      </CardFooter>
+    </Card>
+  )
+}
+
 function GenericToolCard({ toolCall, isExecuted, isLoading, onExecute }: ToolCallUIProps) {
   return (
     <Card className="border-border">
@@ -151,7 +262,14 @@ function GenericToolCard({ toolCall, isExecuted, isLoading, onExecute }: ToolCal
             className="w-full"
             size="sm"
           >
-            {isExecuted ? "✓ Executed" : "Execute"}
+            {isExecuted ? (
+              <>
+                <Check className="h-4 w-4 mr-2" />
+                Done
+              </>
+            ) : (
+              "Execute"
+            )}
           </Button>
         </div>
       </CardContent>
@@ -163,6 +281,12 @@ function ToolCallRenderer({ toolCall, isExecuted, isLoading, onExecute }: ToolCa
   if (toolCall.name === "apply_caption_to_open_post") {
     return <CaptionSuggestionCard toolCall={toolCall} isExecuted={isExecuted} isLoading={isLoading} onExecute={onExecute} />
   }
+  if (toolCall.name === "create_post") {
+    return <CreatePostCard toolCall={toolCall} isExecuted={isExecuted} isLoading={isLoading} onExecute={onExecute} />
+  }
+  if (toolCall.name === "open_post") {
+    return <OpenPostCard toolCall={toolCall} isExecuted={isExecuted} isLoading={isLoading} onExecute={onExecute} />
+  }
   if (toolCall.name === "navigate_to_calendar") {
     return <NavigationButton toolCall={toolCall} isExecuted={isExecuted} isLoading={isLoading} onExecute={onExecute} />
   }
@@ -173,6 +297,59 @@ export function ChatSidebar({ isOpen, onClose }: ChatSidebarProps) {
   const navigate = useNavigate()
   const { calendarSlug } = useParams()
   const { clientContext } = useAppContext() // 1. Read the full context
+
+  // Use a ref to track the latest context value so we can poll it in async functions
+  const contextRef = useRef(clientContext)
+  useEffect(() => {
+    contextRef.current = clientContext
+  }, [clientContext])
+
+  /**
+   * Generic function to wait for a context value to appear.
+   * Useful for waiting for async state updates (e.g., post creation, context updates).
+   * 
+   * @param checkFn Function that returns true when the condition is met
+   * @param options Configuration options
+   * @returns The value returned by checkFn when condition is met, or undefined if timeout
+   */
+  const waitForContext = async <T,>(
+    checkFn: (context: typeof clientContext) => T | null | undefined,
+    options: {
+      maxWaitTime?: number
+      pollInterval?: number
+      initialDelay?: number
+    } = {}
+  ): Promise<T | null | undefined> => {
+    const {
+      maxWaitTime = 5000,
+      pollInterval = 100,
+      initialDelay = 100,
+    } = options
+
+    // Give React a moment to process events and start updating state
+    if (initialDelay > 0) {
+      await new Promise(resolve => setTimeout(resolve, initialDelay))
+    }
+
+    const startTime = Date.now()
+
+    while (Date.now() - startTime < maxWaitTime) {
+      const currentContext = contextRef.current
+      const result = checkFn(currentContext)
+
+      if (result !== null && result !== undefined) {
+        // Give it one more tick to ensure the update is fully propagated
+        await new Promise(resolve => setTimeout(resolve, 50))
+        return result
+      }
+
+      // Wait before checking again
+      await new Promise(resolve => setTimeout(resolve, pollInterval))
+    }
+
+    // Timeout - return the last checked value
+    return checkFn(contextRef.current)
+  }
 
   // Initialize threadId with a stable value that doesn't depend on context
   // We'll update it when context is available
@@ -246,11 +423,34 @@ export function ChatSidebar({ isOpen, onClose }: ChatSidebarProps) {
         }
       } else if (toolCall.name === "apply_caption_to_open_post") {
         // Dispatch caption application event - PostEditor will handle it
+        // Use postId from context if available (more reliable for new posts), otherwise use the one from tool call
+        const postId = clientContext.pageState?.postId || toolCall.args.postId
         appEventBus.dispatch("apply-caption", {
-          postId: toolCall.args.postId,
+          postId: postId,
           caption: toolCall.args.caption,
         })
-        result = `Caption suggestion applied to post ${toolCall.args.postId}`
+        result = `Caption suggestion applied to post ${postId}`
+      } else if (toolCall.name === "create_post") {
+        // Dispatch post creation event - CalendarView will handle it
+        appEventBus.dispatch("create-post", {
+          date: toolCall.args.date,
+        })
+
+        // Wait for the post to be created and context to be updated with postId
+        const postId = await waitForContext(
+          (context) => context.pageState?.postId,
+          { maxWaitTime: 5000, pollInterval: 100, initialDelay: 100 }
+        )
+
+        result = postId
+          ? `Post created and opened (ID: ${postId})`
+          : `Post creation requested for ${toolCall.args.date}`
+      } else if (toolCall.name === "open_post") {
+        // Dispatch post open event - CalendarView will handle it
+        appEventBus.dispatch("open-post", {
+          postId: toolCall.args.postId,
+        })
+        result = `Open post requested for ${toolCall.args.postId}`
       } else {
         throw new Error(`Unknown client-side tool: ${toolCall.name}`)
       }
@@ -293,10 +493,13 @@ export function ChatSidebar({ isOpen, onClose }: ChatSidebarProps) {
     }
 
     // Build the clientContext object from the AppContext
+    // Use contextRef to get the latest context value (updated by useEffect)
+    const currentContext = contextRef.current
     const backendClientContext = {
-      page: clientContext.page === 'postEditor' ? 'calendar' : clientContext.page,
-      component: clientContext.page === 'postEditor' ? 'postEditor' : undefined,
-      postId: clientContext.pageState?.postId || undefined,
+      page: currentContext.page === 'postEditor' ? 'calendar' : currentContext.page,
+      component: currentContext.page === 'postEditor' ? 'postEditor' : undefined,
+      postId: currentContext.pageState?.postId || undefined,
+      pageState: currentContext.pageState || undefined,
     }
 
     const response = await apiFetch("/api/ai/chat", {
@@ -305,7 +508,7 @@ export function ChatSidebar({ isOpen, onClose }: ChatSidebarProps) {
       body: JSON.stringify({
         input: "",
         history: [...history, toolMessage],
-        calendarId: clientContext.calendarId || '',
+        calendarId: contextRef.current.calendarId || '',
         threadId,
         clientContext: backendClientContext,
       }),
@@ -434,11 +637,12 @@ export function ChatSidebar({ isOpen, onClose }: ChatSidebarProps) {
       }
 
       // Build the clientContext object from the AppContext
-      // The backend expects: { page?, component?, postId? }
+      // The backend expects: { page?, component?, postId?, pageState? }
       const backendClientContext = {
         page: clientContext.page === 'postEditor' ? 'calendar' : clientContext.page,
         component: clientContext.page === 'postEditor' ? 'postEditor' : undefined,
         postId: clientContext.pageState?.postId || undefined,
+        pageState: clientContext.pageState || undefined,
       }
 
       const response = await apiFetch("/api/ai/chat", {
@@ -611,3 +815,4 @@ export function ChatSidebar({ isOpen, onClose }: ChatSidebarProps) {
     </aside>
   )
 }
+

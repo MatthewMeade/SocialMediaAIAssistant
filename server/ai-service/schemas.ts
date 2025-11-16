@@ -19,8 +19,6 @@ export type BrandScore = z.infer<typeof BrandScoreSchema>
 // Schema for the API request to generate captions
 export const CaptionGenerationRequestSchema = z.object({
   topic: z.string().describe('The main topic of the post.'),
-  keywords: z.array(z.string()).describe('Keywords to include.'),
-  tone: z.string().describe('The desired tone (e.g., professional, casual).'),
   existingCaption: z.string().optional().describe('An existing caption to edit or refine.'),
 })
 export type CaptionGenerationRequest = z.infer<

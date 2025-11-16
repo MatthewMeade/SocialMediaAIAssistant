@@ -12,7 +12,14 @@ export type ContextKey = 'global' | 'calendar' | 'postEditor' | 'brandVoice'
  */
 const toolManifest: Record<ContextKey, string[]> = {
   global: ['createNavigateToPageTool', 'createGenerateCaptionTool', 'createGetBrandRulesTool', 'createGradeCaptionTool'],
-  calendar: ['createGetPostsTool', 'createGenerateCaptionTool', 'createGetBrandRulesTool', 'createGradeCaptionTool'],
+  calendar: [
+    'createGetPostsTool',
+    'createGenerateCaptionTool',
+    'createGetBrandRulesTool',
+    'createGradeCaptionTool',
+    'createCreatePostTool',
+    'createOpenPostTool',
+  ],
   postEditor: ['createGenerateCaptionTool', 'createApplyCaptionTool', 'createGetBrandRulesTool', 'createGradeCaptionTool'],
   brandVoice: ['createGetBrandRulesTool', 'createGradeCaptionTool'], // Brand rules and grading tools available on brand voice page
 }

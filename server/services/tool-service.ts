@@ -207,7 +207,10 @@ export class ToolService {
     )
 
     return generateCaptions(
-      request,
+      {
+        topic: request.topic,
+        existingCaption: request.existingCaption,
+      },
       brandRules,
       this.dependencies.creativeModel,
       (caption, rules) =>
@@ -314,14 +317,10 @@ export class ToolService {
     return tool(
       async (input: {
         topic: string
-        keywords: string[]
-        tone: string
         existingCaption?: string
       }) => {
         const result = await this.generateCaption({
           topic: input.topic,
-          keywords: input.keywords,
-          tone: input.tone,
           existingCaption: input.existingCaption,
         })
         return {
@@ -336,8 +335,6 @@ export class ToolService {
           'Generates a new post caption or refines an existing one based on brand voice rules. Returns the caption, score, and suggestions.',
         schema: z.object({
           topic: z.string().describe('The main topic of the post'),
-          keywords: z.array(z.string()).describe('Keywords to include'),
-          tone: z.string().describe('The desired tone (e.g., professional, casual)'),
           existingCaption: z
             .string()
             .optional()
@@ -489,6 +486,62 @@ export class ToolService {
         schema: z.object({
           caption: z.string().describe('The caption text to grade against brand voice rules'),
         }),
+      },
+    )
+  }
+
+  /**
+   * Creates a client-side tool for creating a new post on a specific date.
+   * This tool returns `returnDirect: true`, so the client receives the instruction.
+   */
+  createCreatePostTool() {
+    return tool(
+      async (input: { date: string; label?: string }) => {
+        // This is a client-side tool - the actual post creation happens on the client
+        return `Post creation requested for ${input.date}. The client will open the post editor.`
+      },
+      {
+        name: 'create_post',
+        description:
+          'Creates a new post on a specific date. Opens the post editor modal with a new draft post. The date should be in ISO format (YYYY-MM-DD) or a relative date like "today", "tomorrow", or a day name like "Monday".',
+        schema: z.object({
+          date: z
+            .string()
+            .describe(
+              'The date for the new post. Can be ISO format (YYYY-MM-DD), "today", "tomorrow", or a day name (e.g., "Monday").',
+            ),
+          label: z
+            .string()
+            .optional()
+            .describe('Optional label to display on the button (default: "Create Post")'),
+        }),
+        returnDirect: true, // Client-side tool - returns directly to UI
+      },
+    )
+  }
+
+  /**
+   * Creates a client-side tool for opening an existing post.
+   * This tool returns `returnDirect: true`, so the client receives the instruction.
+   */
+  createOpenPostTool() {
+    return tool(
+      async (input: { postId: string; label?: string }) => {
+        // This is a client-side tool - the actual navigation happens on the client
+        return `Open post requested for ${input.postId}. The client will open the post editor.`
+      },
+      {
+        name: 'open_post',
+        description:
+          'Opens an existing post in the post editor. Use this when the user asks to view, edit, or open a specific post. You can get post IDs from the get_posts tool.',
+        schema: z.object({
+          postId: z.string().describe('The ID of the post to open'),
+          label: z
+            .string()
+            .optional()
+            .describe('Optional label to display on the button (default: "Open Post")'),
+        }),
+        returnDirect: true, // Client-side tool - returns directly to UI
       },
     )
   }

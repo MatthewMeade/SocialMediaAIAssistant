@@ -32,7 +32,7 @@ const systemPrompt = `You are an expert AI assistant for social media content ma
 CRITICAL: You MUST use tools to help users. Do NOT just provide text responses when tools are available.
 
 **When to use tools:**
-1. **generate_caption**: ALWAYS use this tool when users ask you to create, write, or generate a caption for a post. Extract the topic, keywords, and tone from their request, then call generate_caption with those details. Do NOT write the caption directly in your response - use the tool!
+1. **generate_caption**: ALWAYS use this tool when users ask you to create, write, or generate a caption for a post. Extract the topic from their request, then call generate_caption with the topic. Do NOT write the caption directly in your response - use the tool!
 
 2. **get_posts**: Use this tool when users ask about their posts, want to see what's scheduled, or need information about existing content.
 
@@ -45,23 +45,52 @@ CRITICAL: You MUST use tools to help users. Do NOT just provide text responses w
    - You can only use this tool when a post is open (check the "Current Post" context). Use the Post ID from that context as the postId parameter.
    - The user will see the suggestion in a card and can click to accept or ignore it - the tool call itself is the permission request.
 
-5. **navigate_to_calendar**: Use this tool when users ask to open, view, access, or navigate to the calendar page. Do NOT just describe navigation - you must call the tool.
+5. **create_post**:
+   - Use this tool when users ask to create a new post, add a post, or schedule a post.
+   - **WORKFLOW**: When a user asks you to "make a post" or "create a post":
+     **STEP 1**: Ask the user which date they want to schedule the post for (e.g., "today", "tomorrow", or a specific date like "2025-11-26") AND what topic they want.
+     **STEP 2**: Once you have BOTH the date AND topic:
+       a) FIRST: Call create_post with the date ONCE - This opens the post editor modal on the client and saves the post immediately
+       b) THEN: Always provide a text response explaining what you're doing, like "I've created and opened the post editor for [date]. Now I'll generate a caption for your post about [topic]."
+       c) THEN: Call generate_caption with the topic
+       d) FINALLY: Check if the "Current Post" context has a postId. If it does, call apply_caption_to_open_post with that postId. The post will be saved immediately when created, so the postId should be available.
+     **CRITICAL**:
+       - Always provide text responses between tool calls. Never return empty responses.
+       - DO NOT call create_post more than once - call it ONCE and then continue with generate_caption
+       - DO NOT call open_post after create_post - create_post already opens the editor
+       - The post is saved immediately when created, so you can use the postId from context right away
+   - The date can be in ISO format (YYYY-MM-DD), "today", "tomorrow", or a day name like "Monday".
+
+6. **open_post**: Use this tool when users ask to view, edit, or open a specific post. You can get post IDs from the get_posts tool or from the calendar context. This opens the post in the editor.
+
+7. **navigate_to_calendar**: Use this tool when users ask to open, view, access, or navigate to the calendar page. Do NOT just describe navigation - you must call the tool.
 
 **Example workflow for caption generation (when post is open):**
 - User: "Create a caption about our sale"
-- You: [Call generate_caption with topic="sale", keywords=["sale", "discount"], tone="excited"]
+- You: [Call generate_caption with topic="our sale"]
 - You: [IMMEDIATELY call apply_caption_to_open_post with the generated caption and the Post ID from context]
 - You: "I've created and applied a caption suggestion for your post! You can review it in the editor and make any changes you'd like."
 
-**Example workflow for caption generation (when NO post is open):**
+**Example workflow for creating a new post (when NO post is open):**
+- User: "Make a post about our sale"
+- You: "Great! Which date would you like to schedule this post for? You can say 'today', 'tomorrow', or a specific date like '2025-11-26'. Also, what topic would you like for the post?"
+- User: "Tomorrow, topic is our summer sale"
+- You: [Call create_post with date="tomorrow"]
+- You: "I've opened the post editor for tomorrow. Now I'll generate a caption for your post about the summer sale."
+- You: [Call generate_caption with topic="our summer sale"]
+- You: "I've generated a caption: [show caption]. Since the post editor is now open, I can apply this caption to your post."
+- You: [Check if "Current Post" context has a postId - if yes, call apply_caption_to_open_post. If no, say "The post editor should be open now. I can apply the caption once it's ready."]
+
+**Example workflow for caption generation only (when NO post is open and user doesn't want to create post):**
 - User: "Create a caption about our sale"
-- You: [Call generate_caption with topic="sale", keywords=["sale", "discount"], tone="excited"]
-- You: "I've generated a caption for you: [show caption]. To apply it, please open a post in the editor first."
+- You: [Call generate_caption with topic="our sale"]
+- You: "I've generated a caption for you: [show caption]. To apply it, please open a post in the editor first, or I can help you create a new post if you'd like."
 
 **Tool usage rules:**
 - ALWAYS use generate_caption instead of writing captions directly
 - When a post is open and you generate a caption, AUTOMATICALLY apply it using apply_caption_to_open_post - the tool itself shows a UI that asks for permission, so you don't need to ask first
-- When you receive a ToolMessage indicating completion, acknowledge it briefly and continue naturally
+- When you receive a ToolMessage indicating completion, acknowledge it briefly and continue with the NEXT step - DO NOT call the same tool again
+- NEVER call the same tool twice in a row - if you called create_post and received a ToolMessage, do NOT call create_post again
 - Be proactive - if a tool would help, use it
 - Remember: Tools with returnDirect: true (like apply_caption_to_open_post) show UI elements that handle permission - you can call them directly without asking first
 - Provide helpful, actionable feedback. Be friendly and professional.`
@@ -91,9 +120,11 @@ function convertHistoryToLangChainMessages(
       }
     }
     // Assistant
+    // Ensure content is always a string (not empty, as empty strings can cause format issues)
+    const assistantContent = msg.content && msg.content.trim() ? msg.content : (msg.tool_calls ? '' : ' ')
     return {
       role: 'assistant' as const,
-      content: msg.content || '',
+      content: assistantContent,
       ...(msg.tool_calls && { tool_calls: msg.tool_calls }),
     }
   })
@@ -161,8 +192,11 @@ function extractAgentResponse(response: any): {
   if (hasToolCalls) {
     const clientToolCalls = extractClientToolCalls(lastAIMessage)
     if (clientToolCalls.length > 0) {
+      // Include any text content even when there are client-side tool calls
+      // This allows the AI to provide context/feedback along with tool actions
+      const content = extractMessageContent(lastAIMessage)
       return {
-        response: '',
+        response: content || '',
         toolCalls: clientToolCalls,
       }
     }
@@ -188,13 +222,15 @@ function extractClientToolCalls(message: any): any[] {
       tc &&
       typeof tc === 'object' &&
       (tc.name === 'navigate_to_calendar' ||
-        tc.name === 'apply_caption_to_open_post'),
+        tc.name === 'apply_caption_to_open_post' ||
+        tc.name === 'create_post' ||
+        tc.name === 'open_post'),
   )
 
   return clientToolCalls.map((tc: any) => ({
     id: tc.id,
     name: tc.name,
-    args: tc.args,
+    args: tc.args || {},
   }))
 }
 
@@ -222,14 +258,12 @@ function extractMessageContent(message: any): string {
  * It manages the full lifecycle of an agent request.
  */
 export class ChatService {
-  private context: ChatServiceContext
   private dependencies: ChatServiceDependencies
 
   constructor(
-    context: ChatServiceContext,
+    _context: ChatServiceContext, // Context validated at route level, passed to ToolService
     dependencies: ChatServiceDependencies,
   ) {
-    this.context = context
     this.dependencies = dependencies
   }
 
@@ -242,15 +276,52 @@ export class ChatService {
       page?: string
       component?: string
       postId?: string
+      pageState?: {
+        currentMonth?: number
+        currentYear?: number
+        postId?: string
+        [key: string]: any
+      }
     },
   ): Promise<string> {
     const contextParts: string[] = []
 
     // 1. Page-level context
     if (clientContext?.page === 'calendar') {
-      contextParts.push(
-        '**Current Context:**\nThe user is viewing their calendar page where they can see all their scheduled posts.',
-      )
+      let calendarContext = '**Current Context:**\nThe user is viewing their calendar page where they can see all their scheduled posts.'
+
+      // RAG: Include posts from the current month if available
+      if (clientContext.pageState?.currentMonth !== undefined) {
+        try {
+          const allPosts = await this.dependencies.toolService.getPosts()
+          const currentMonth = clientContext.pageState.currentMonth
+          const currentYear = clientContext.pageState.currentYear || new Date().getFullYear()
+
+          // Filter posts for the current month
+          const monthPosts = allPosts.filter((post) => {
+            const postDate = new Date(post.date)
+            return postDate.getMonth() === currentMonth && postDate.getFullYear() === currentYear
+          })
+
+          if (monthPosts.length > 0) {
+            const postsSummary = monthPosts
+              .slice(0, 10) // Limit to 10 posts to avoid token bloat
+              .map((post) => {
+                const date = new Date(post.date)
+                return `- ${date.toISOString().split('T')[0]}: ${post.caption ? post.caption.substring(0, 50) + '...' : '(No caption)'} [${post.status}]`
+              })
+              .join('\n')
+
+            calendarContext += `\n\n**Posts in current view (${monthPosts.length} total):**\n${postsSummary}${monthPosts.length > 10 ? `\n... and ${monthPosts.length - 10} more posts` : ''}`
+          } else {
+            calendarContext += '\n\n**Posts in current view:** No posts scheduled for this month.'
+          }
+        } catch (error) {
+          console.error('[ChatService] Error fetching posts for calendar context:', error)
+        }
+      }
+
+      contextParts.push(calendarContext)
     } else if (clientContext?.page === 'brandVoice') {
       contextParts.push(
         '**Current Context:**\nThe user is viewing their brand voice settings page.',
@@ -299,11 +370,15 @@ export class ChatService {
       )
     }
 
+    // Add current date for relative date calculations
+    const currentDate = new Date()
+    const dateInfo = `\n\n**Current Date:** ${currentDate.toISOString().split('T')[0]} (${currentDate.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })})\nWhen users say "today", they mean ${currentDate.toISOString().split('T')[0]}. When they say "tomorrow", they mean ${new Date(currentDate.getTime() + 24 * 60 * 60 * 1000).toISOString().split('T')[0]}.`
+
     // Combine all context parts
     const contextInfo =
       contextParts.length > 0 ? '\n\n' + contextParts.join('\n\n') : ''
 
-    return systemPrompt + contextInfo
+    return systemPrompt + dateInfo + contextInfo
   }
 
   /**
@@ -324,6 +399,12 @@ export class ChatService {
       page?: string
       component?: string
       postId?: string
+      pageState?: {
+        currentMonth?: number
+        currentYear?: number
+        postId?: string
+        [key: string]: any
+      }
     },
   ): Promise<{ response: string; toolCalls?: any[] }> {
     // 1. Determine which tools are needed based on clientContext
@@ -366,13 +447,14 @@ export class ChatService {
     const responseMessageCount = response.messages?.length || 0
     const inputMessageCount = messages.length
 
+    // Only use continuation prompt if agent truly didn't respond
+    // If clientContext has a postId, the agent should be able to see it in the next request
     if (hasToolMessage && responseMessageCount <= inputMessageCount) {
       const continuationMessages = [
         ...messages,
         {
           role: 'user' as const,
-          content:
-            'The tool action has been completed. Please acknowledge this and ask what else you can help with.',
+          content: 'The tool action has been completed. Please continue with the next step.',
         },
       ]
       const continuationResponse = await invokeAgentWithTimeout(

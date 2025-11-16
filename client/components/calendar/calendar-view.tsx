@@ -5,6 +5,8 @@ import { CalendarGrid } from "./calendar-grid"
 import { PostEditor } from "./post-editor"
 import { usePosts } from "@/lib/hooks/use-posts"
 import { useAppContext } from "@/components/layout/app-layout"
+import { useAppEvent } from "@/hooks/use-app-event"
+import { appEventBus } from "@/lib/event-bus"
 import type { Post, User } from "@/lib/types"
 
 interface CalendarViewProps {
@@ -24,14 +26,15 @@ export function CalendarView({ currentUser, calendarId, calendarSlug, postToOpen
 
   const { posts = [], isLoading, createPost, updatePost, deletePost } = usePosts(calendarId)
 
-  // 1. Set the page context when editor closes (no Effect needed for initial load)
+  // 1. Set the page context when editor closes or when month changes (for RAG)
   // The AppLayout already calculates the base page from location
-  // We only need to update when editor state changes
+  // We only need to update when editor state or month changes
   useEffect(() => {
     if (!isEditorOpen) {
-      // Clear any override and set back to calendar
+      // Clear any override and set back to calendar with current month
       setClientContext("calendar", {
         currentMonth: currentDate.getMonth(),
+        currentYear: currentDate.getFullYear(),
       })
     }
   }, [isEditorOpen, setClientContext, currentDate])
@@ -62,9 +65,9 @@ export function CalendarView({ currentUser, calendarId, calendarSlug, postToOpen
     setCurrentDate(new Date())
   }
 
-  const handleAddPost = (date: Date) => {
+  const handleAddPost = async (date: Date) => {
     const tempId = `temp-${Date.now()}`
-    setSelectedPost({
+    const newPost = {
       id: tempId,
       calendarId,
       date,
@@ -75,10 +78,23 @@ export function CalendarView({ currentUser, calendarId, calendarSlug, postToOpen
       authorId: currentUser.id,
       authorName: currentUser.name,
       comments: [],
-    })
-    setIsEditorOpen(true)
-    // 2. Set context to "postEditor" when modal opens
-    setClientContext("postEditor", { postId: tempId })
+    }
+    
+    // Save the post immediately so it has a real ID
+    try {
+      const { id, ...postWithoutId } = newPost
+      const savedPost = await createPost.mutateAsync(postWithoutId)
+      setSelectedPost(savedPost)
+      setIsEditorOpen(true)
+      // Set context with the real post ID
+      setClientContext("postEditor", { postId: savedPost.id })
+    } catch (error) {
+      // If save fails, still open editor with temp ID
+      console.error("Failed to save post immediately:", error)
+      setSelectedPost(newPost)
+      setIsEditorOpen(true)
+      setClientContext("postEditor", { postId: tempId })
+    }
   }
 
   const handleEditPost = (post: Post) => {
@@ -112,8 +128,70 @@ export function CalendarView({ currentUser, calendarId, calendarSlug, postToOpen
     // 3. Revert context back to "calendar" when modal closes
     setClientContext("calendar", {
       currentMonth: currentDate.getMonth(),
+      currentYear: currentDate.getFullYear(),
     })
   }
+
+  // Helper to parse date string (ISO, "today", "tomorrow", or day name)
+  const parseDate = (dateStr: string): Date => {
+    const lower = dateStr.toLowerCase().trim()
+    
+    if (lower === "today") {
+      return new Date()
+    }
+    
+    if (lower === "tomorrow") {
+      const tomorrow = new Date()
+      tomorrow.setDate(tomorrow.getDate() + 1)
+      return tomorrow
+    }
+
+    // Try to parse as ISO date (YYYY-MM-DD)
+    const isoDate = new Date(dateStr)
+    if (!isNaN(isoDate.getTime())) {
+      return isoDate
+    }
+
+    // Try to parse as day name (e.g., "Monday", "monday")
+    const dayNames = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"]
+    const dayIndex = dayNames.findIndex((day) => lower.includes(day))
+    if (dayIndex !== -1) {
+      const today = new Date()
+      const currentDay = today.getDay()
+      let daysUntil = dayIndex - currentDay
+      if (daysUntil <= 0) {
+        daysUntil += 7 // Next occurrence
+      }
+      const targetDate = new Date(today)
+      targetDate.setDate(today.getDate() + daysUntil)
+      return targetDate
+    }
+
+    // Default to today if parsing fails
+    return new Date()
+  }
+
+  // Listen for create-post events from AI chat
+  useAppEvent<{ date: string }>(
+    "create-post",
+    (event) => {
+      const targetDate = parseDate(event.date)
+      handleAddPost(targetDate)
+    },
+    [],
+  )
+
+  // Listen for open-post events from AI chat
+  useAppEvent<{ postId: string }>(
+    "open-post",
+    (event) => {
+      const post = posts.find((p: Post) => p.id === event.postId)
+      if (post) {
+        handleEditPost(post)
+      }
+    },
+    [posts],
+  )
 
   return (
     <div className="flex flex-col h-full relative">

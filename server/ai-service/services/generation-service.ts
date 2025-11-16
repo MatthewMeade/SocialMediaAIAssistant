@@ -29,12 +29,10 @@ const generationPromptTemplate = new PromptTemplate({
 
 **Post Details:**
 - Topic: {topic}
-- Keywords: {keywords}
-- Tone: {tone}
 
-Generate a single, compelling post caption based on these details and adhering STRICTLY to ONLY the brand voice rules listed above. Do not include any requirements, styles, or elements that are not explicitly mentioned in the rules above.
+Generate a single, compelling post caption based on the topic and adhering STRICTLY to ONLY the brand voice rules listed above. Do not include any requirements, styles, or elements that are not explicitly mentioned in the rules above.
 `,
-  inputVariables: ['rules', 'topic', 'keywords', 'tone'],
+  inputVariables: ['rules', 'topic'],
 })
 
 // This prompt is for refining a failed or existing caption
@@ -52,18 +50,14 @@ const refinementPromptTemplate = new PromptTemplate({
 
 **Original Post Details:**
 - Topic: {topic}
-- Keywords: {keywords}
-- Tone: {tone}
 
-Rewrite the caption to fix the issues, meet ALL brand voice rules listed above, and fulfill the original post details. Only follow the rules explicitly listed above - do not include any requirements, styles, or elements that are not mentioned in the rules. Output only the new caption.
+Rewrite the caption to fix the issues, meet ALL brand voice rules listed above, and fulfill the original post topic. Only follow the rules explicitly listed above - do not include any requirements, styles, or elements that are not mentioned in the rules. Output only the new caption.
 `,
   inputVariables: [
     'rules',
     'failedCaption',
     'feedback',
     'topic',
-    'keywords',
-    'tone',
   ],
 })
 
@@ -112,8 +106,6 @@ export async function generateCaptions(
   let initialCaption: string
     let initialScore: BrandScore
 
-  const keywords = request.keywords.join(', ')
-
   // 1. Get Initial Caption
   if (request.existingCaption) {
     initialCaption = request.existingCaption
@@ -122,8 +114,7 @@ export async function generateCaptions(
     // If no enabled rules, use a default message
     const rulesForPrompt = rulesString || "No specific brand voice rules are currently active."
     const result = await generationChain.invoke({
-      ...request,
-      keywords,
+      topic: request.topic,
       rules: rulesForPrompt,
     })
     initialCaption = extractTextFromMessage(result)
@@ -146,8 +137,7 @@ export async function generateCaptions(
 
     const rulesForRefinement = rulesString || "No specific brand voice rules are currently active."
     const result = await refinementChain.invoke({
-      ...request,
-      keywords,
+      topic: request.topic,
       rules: rulesForRefinement,
       failedCaption: initialCaption,
       feedback,

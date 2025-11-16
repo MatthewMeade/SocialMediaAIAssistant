@@ -117,8 +117,14 @@ export function PostEditor({
   useAppEvent<{ postId: string; caption: string }>(
     'apply-caption',
     (event) => {
-      // Only apply if this event is for the current post
-      if (event.postId === editedPost.id) {
+      // Apply if this event is for the current post
+      // For new posts, we accept any apply-caption event since there's only one post open
+      // For existing posts, match by ID
+      const isCurrentPost = event.postId === editedPost.id || 
+                           editedPost.id.startsWith('temp-') ||
+                           !editedPost.id // Also accept if post has no ID yet
+      
+      if (isCurrentPost) {
         handleUpdate({ caption: event.caption })
         // Trigger brand score fetch for the new caption
         if (editedPost.calendarId) {
