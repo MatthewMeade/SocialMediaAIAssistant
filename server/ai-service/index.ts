@@ -14,7 +14,6 @@ import type {
 import type { BaseChatModel } from '@langchain/core/language_models/chat_models'
 import type { DallEAPIWrapper } from '@langchain/openai'
 import type { MediaItem } from '../../shared/types'
-import { runChatAgent } from './services/agent-service'
 
 class AiService {
   private repo: IAiDataRepository
@@ -75,28 +74,6 @@ class AiService {
     // Call the pure AI service
     // Use the faster model for this direct refinement task
     return await applySuggestions(caption, suggestions, this.models.chatModel)
-  }
-
-  /**
-   * Public method for the general chatbot.
-   * Creates an agent and runs it with the provided input and history.
-   */
-  async runChat(
-    input: string,
-    history: Array<{ role: string; content: string; tool_calls?: any[]; tool_call_id?: string; name?: string }>,
-    userId: string,
-    calendarId: string,
-  ): Promise<{ response: string; toolCalls?: any[] }> {
-    return await runChatAgent(
-      input,
-      history,
-      userId,
-      calendarId,
-      this.repo,
-      this.models.chatModel,
-      this.models.creativeModel,
-      this.models.imageGenerator,
-    )
   }
 
   /**
