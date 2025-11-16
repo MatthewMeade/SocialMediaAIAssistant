@@ -163,7 +163,9 @@ function CreatePostCard({ toolCall, isExecuted, isLoading, onExecute }: ToolCall
       if (!isNaN(d.getTime())) {
         return d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })
       }
-    } catch { }
+    } catch {
+      // Invalid date, return original
+    }
     return date
   })()
 
@@ -478,6 +480,7 @@ export function ChatSidebar({ isOpen, onClose }: ChatSidebarProps) {
       // Send tool result back to agent
       await sendToolResult(toolCall.id, toolCall.name, result)
     } catch (error) {
+      console.error('Error executing tool call:', error)
       // If execution fails, unmark as executed so user can retry
       setExecutedToolCalls((prev) => {
         const newSet = new Set(prev)
@@ -694,6 +697,7 @@ export function ChatSidebar({ isOpen, onClose }: ChatSidebarProps) {
         },
       ])
     } catch (error) {
+      console.error('Error sending chat message:', error)
       // Show error message to user
       setMessages((prev) => [
         ...prev,

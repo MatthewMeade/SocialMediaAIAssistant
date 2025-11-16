@@ -79,6 +79,7 @@ export function OrgSettingsView({ organization, currentUserId }: OrgSettingsView
 
       setInviteEmail("")
     } catch (error) {
+      console.error('Error inviting member:', error)
       toast({
         title: "Error",
         description: "Failed to invite member. Please try again.",
@@ -98,6 +99,7 @@ export function OrgSettingsView({ organization, currentUserId }: OrgSettingsView
         description: "The member has been removed from the organization.",
       })
     } catch (error) {
+      console.error('Error removing member:', error)
       toast({
         title: "Error",
         description: "Failed to remove member. Please try again.",

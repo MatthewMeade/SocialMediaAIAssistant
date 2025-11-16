@@ -36,6 +36,7 @@ export function LoginForm() {
         navigate("/dashboard")
       }
     } catch (err) {
+      console.error('Login error:', err)
       setError("An unexpected error occurred")
     } finally {
       setIsLoading(false)

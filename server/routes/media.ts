@@ -64,7 +64,7 @@ app.delete('/', async (c) => {
   if (!isUser(authResult)) {
     return c.json({ error: 'Unauthorized' }, 401)
   }
-  const user = authResult
+  const _user = authResult
 
   const mediaId = c.req.query('id')
 

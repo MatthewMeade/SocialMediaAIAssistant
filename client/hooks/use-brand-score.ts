@@ -13,7 +13,7 @@ type ApiPostWithSignal = <T>(
 export function useBrandScore(initialCaption: string | null, calendarId: string | null) {
   const [brandScore, setBrandScore] = useState<BrandScore | null>(null)
   const lastFetchedCaptionRef = useRef<string | null>(null)
-  const scoreFetchTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const scoreFetchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const abortControllerRef = useRef<AbortController | null>(null)
   const isInitialMount = useRef(true)
 

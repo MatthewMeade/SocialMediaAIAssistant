@@ -17,7 +17,7 @@ interface PostSidebarProps {
 
 export function PostSidebar({
   post,
-  currentUser,
+  currentUser: _currentUser,
   onUpdate,
   onStatusChange,
   onAddComment,

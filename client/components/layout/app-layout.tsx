@@ -1,4 +1,4 @@
-import { useState, createContext, useContext, useCallback, useMemo, useEffect } from "react"
+import { useState, createContext, useContext, useCallback, useMemo, useEffect, startTransition } from "react"
 import { Outlet, useParams, Navigate, useLocation } from "react-router-dom"
 import { useQuery } from "@tanstack/react-query"
 import { SidebarProvider } from "../ui/sidebar"
@@ -84,8 +84,10 @@ export default function AppLayout() {
     // Clear override if user navigates to a different base page
     // (e.g., from calendar to brandVoice, but allow postEditor on calendar)
     if (pageOverride && pageOverride !== basePage && basePage !== "calendar") {
-      setPageOverride(null)
-      setPageState(null)
+      startTransition(() => {
+        setPageOverride(null)
+        setPageState(null)
+      })
     }
   }, [basePage, pageOverride])
 

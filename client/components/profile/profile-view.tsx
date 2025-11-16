@@ -153,6 +153,7 @@ export function ProfileView({ currentUser }: ProfileViewProps) {
         description: "Your profile picture has been updated.",
       })
     } catch (error) {
+      console.error('Error uploading avatar:', error)
       toast({
         title: "Error",
         description: "Failed to upload avatar. Please try again.",

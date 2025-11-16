@@ -47,7 +47,7 @@ app.post('/', async (c) => {
     // Convert File to Buffer for Supabase storage
     const arrayBuffer = await file.arrayBuffer()
     const buffer = Buffer.from(arrayBuffer)
-    const fileExtension = file.name.split('.').pop() || 'bin'
+    const _fileExtension = file.name.split('.').pop() || 'bin'
     const filename = `${Date.now()}_${file.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`
     
     // Determine file path - use calendarId folder if provided, otherwise use user folder

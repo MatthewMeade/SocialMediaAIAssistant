@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react"
+import { useState, useEffect, startTransition } from "react"
 import { useNavigate, useSearchParams } from "react-router-dom"
 import { CalendarHeader } from "./calendar-header"
 import { CalendarGrid } from "./calendar-grid"
@@ -6,7 +6,7 @@ import { PostEditor } from "./post-editor"
 import { usePosts } from "@/lib/hooks/use-posts"
 import { useAppContext } from "@/components/layout/app-layout"
 import { useAppEvent } from "@/hooks/use-app-event"
-import { appEventBus } from "@/lib/event-bus"
+// import { appEventBus } from "@/lib/event-bus" // Unused
 import type { Post, User } from "@/lib/types"
 
 interface CalendarViewProps {
@@ -43,9 +43,11 @@ export function CalendarView({ currentUser, calendarId, calendarSlug, postToOpen
     if (postToOpen) {
       const post = posts.find((p: Post) => p.id === postToOpen)
       if (post) {
-        setSelectedPost(post)
-        setIsEditorOpen(true)
-        setClientContext("postEditor", { postId: post.id })
+        startTransition(() => {
+          setSelectedPost(post)
+          setIsEditorOpen(true)
+          setClientContext("postEditor", { postId: post.id })
+        })
         const params = new URLSearchParams(searchParams.toString())
         params.delete("post")
         navigate(`/${calendarSlug}/calendar?${params.toString()}`, { replace: true })
@@ -82,7 +84,7 @@ export function CalendarView({ currentUser, calendarId, calendarSlug, postToOpen
     
     // Save the post immediately so it has a real ID
     try {
-      const { id, ...postWithoutId } = newPost
+      const { id: _id, ...postWithoutId } = newPost
       const savedPost = await createPost.mutateAsync(postWithoutId)
       setSelectedPost(savedPost)
       setIsEditorOpen(true)
@@ -110,7 +112,7 @@ export function CalendarView({ currentUser, calendarId, calendarSlug, postToOpen
       setSelectedPost(post)
     } else {
       // For new posts, omit the id field
-      const { id, ...postWithoutId } = post
+      const { id: _id, ...postWithoutId } = post
       const newPost = await createPost.mutateAsync(postWithoutId)
       setSelectedPost(newPost)
     }
