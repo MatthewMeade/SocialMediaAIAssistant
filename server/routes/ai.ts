@@ -6,6 +6,8 @@ import { ToolService } from '../services/tool-service'
 import { ChatService } from '../services/chat-service'
 import { chatModel, creativeModel, imageGenerator } from '../ai-service/models'
 import { generateAndStoreImage } from '../ai-service/services/image-generation-service'
+import { getBrandVoiceScore } from '../ai-service/services/grading-service'
+import { generateCaptions } from '../ai-service/services/generation-service'
 import type {
   CaptionGenerationRequest,
   ApplySuggestionsRequest,
@@ -48,9 +50,6 @@ app.post('/grade-caption', async (c) => {
 
     // Get brand rules and grade the caption
     const brandRules = await repo.getBrandRules(calendarId)
-    const { getBrandVoiceScore } = await import(
-      '../ai-service/services/grading-service'
-    )
     const score = await getBrandVoiceScore(
       caption,
       brandRules,
@@ -92,12 +91,6 @@ app.post('/generate-caption', async (c) => {
   try {
     const repo = new LocalDataRepository()
     const brandRules = await repo.getBrandRules(calendarId)
-    const { generateCaptions } = await import(
-      '../ai-service/services/generation-service'
-    )
-    const { getBrandVoiceScore } = await import(
-      '../ai-service/services/grading-service'
-    )
 
     const result = await generateCaptions(
       request,
