@@ -3,16 +3,9 @@ import type { IAiDataRepository } from '../ai-service/repository'
 import type { BaseChatModel } from '@langchain/core/language_models/chat_models'
 import type { DallEAPIWrapper } from '@langchain/openai'
 import type { ToolService } from './tool-service'
+import { toolContextSchema } from './tool-service'
 import { getContextKeys, getToolsForContext } from '../ai-service/tool-manifest'
 import * as z from 'zod'
-
-/**
- * Context that is securely injected into the ChatService instance.
- */
-export interface ChatServiceContext {
-  userId: string
-  calendarId: string
-}
 
 /**
  * Dependencies injected into the ChatService.
@@ -100,21 +93,35 @@ CRITICAL: You MUST use tools to help users. Do NOT just provide text responses w
  * Schema for the agent's configurable context.
  * This allows us to pass clientContext and toolService to the middleware.
  */
-const agentContextSchema = z.object({
-  clientContext: z.any().optional(),
-  toolService: z.custom<ToolService>(),
-})
+type AgentContextConfig = {
+  clientContext?: {
+    page?: string
+    component?: string
+    postId?: string
+    noteId?: string
+    calendarId?: string
+    pageState?: {
+      currentMonth?: number
+      currentYear?: number
+      postId?: string
+      noteId?: string
+      [key: string]: any
+    }
+  }
+  toolService: ToolService
+  repo: IAiDataRepository
+}
 
 /**
  * This function replaces the old 'buildSystemPrompt' logic.
  * It reads the clientContext (passed via config.configurable) and fetches
  * specific documents by ID, not by semantic search.
  */
-async function loadContextualData(config: z.infer<typeof agentContextSchema>): Promise<string> {
-  const { clientContext, toolService } = config
+async function loadContextualData(config: AgentContextConfig): Promise<string> {
+  const { clientContext, repo } = config
   const contextParts: string[] = []
 
-  if (!clientContext || !toolService) {
+  if (!clientContext || !repo) {
     return '' // No context to inject
   }
 
@@ -123,7 +130,7 @@ async function loadContextualData(config: z.infer<typeof agentContextSchema>): P
   // 1. Post context (fetch by ID)
   if (clientContext.postId) {
     try {
-      const post = await toolService.getPost(clientContext.postId)
+      const post = await repo.getPost(clientContext.postId)
       if (post) {
         contextParts.push(
           `**Current Post:**\nThe user is currently viewing/editing a post:\n- Post ID: ${post.id}\n- Caption: ${post.caption || '(No caption yet)'}\n- Platform: ${post.platform}\n- Status: ${post.status}\n- Date: ${post.date.toISOString().split('T')[0]}\n- Images: ${post.images.length} image(s)\n\nWhen the user asks about "this post" or "the current post", they are referring to this post. When using the apply_caption_to_open_post tool, you MUST use Post ID: ${post.id} as the postId parameter.`,
@@ -137,7 +144,7 @@ async function loadContextualData(config: z.infer<typeof agentContextSchema>): P
   // 1b. Note context (fetch by ID)
   if (clientContext.noteId) {
     try {
-      const note = await toolService.getNote(clientContext.noteId)
+      const note = await repo.getNote(clientContext.noteId)
       if (note) {
         // Extract text content from Slate JSON for context
         const extractText = (content: any): string => {
@@ -165,23 +172,27 @@ async function loadContextualData(config: z.infer<typeof agentContextSchema>): P
   }
 
   // 2. Brand Voice context (fetch all for calendar)
-  try {
-    const brandRules = await toolService.getBrandRules()
-    const enabledRules = brandRules.filter((r) => r.enabled)
-    if (enabledRules.length > 0) {
-      const rulesText = enabledRules
-        .map((r) => `- **${r.title}:** ${r.description}`)
-        .join('\n')
-      contextParts.push(
-        `**Brand Voice Rules:**\nThe following brand voice rules are active for this calendar:\n${rulesText}\n\nAlways follow these rules when generating or suggesting content. When grading content, evaluate it against these rules.`,
-      )
-    } else {
-      contextParts.push(
-        '**Brand Voice Rules:**\nNo active brand voice rules are currently configured for this calendar.',
-      )
+  // Note: We need calendarId from clientContext, but it's not always available
+  // For now, we'll skip this if calendarId is not available
+  if (clientContext.calendarId) {
+    try {
+      const brandRules = await repo.getBrandRules(clientContext.calendarId)
+      const enabledRules = brandRules.filter((r) => r.enabled)
+      if (enabledRules.length > 0) {
+        const rulesText = enabledRules
+          .map((r) => `- **${r.title}:** ${r.description}`)
+          .join('\n')
+        contextParts.push(
+          `**Brand Voice Rules:**\nThe following brand voice rules are active for this calendar:\n${rulesText}\n\nAlways follow these rules when generating or suggesting content. When grading content, evaluate it against these rules.`,
+        )
+      } else {
+        contextParts.push(
+          '**Brand Voice Rules:**\nNo active brand voice rules are currently configured for this calendar.',
+        )
+      }
+    } catch (error) {
+      console.error('[ContextLoader] Error fetching brand rules:', error)
     }
-  } catch (error) {
-    console.error('[ContextLoader] Error fetching brand rules:', error)
   }
 
   // 3. Add current date context
@@ -239,7 +250,7 @@ function convertHistoryToLangChainMessages(
 async function invokeAgentWithTimeout(
   agent: ReturnType<typeof createAgent>,
   input: any[],
-  config?: { context?: z.infer<typeof agentContextSchema> },
+  config?: { context?: z.infer<typeof toolContextSchema> },
 ) {
   const invokePromise = agent.invoke({ messages: input }, config)
 
@@ -364,10 +375,7 @@ function extractMessageContent(message: any): string {
 export class ChatService {
   private dependencies: ChatServiceDependencies
 
-  constructor(
-    _context: ChatServiceContext, // Context validated at route level, passed to ToolService
-    dependencies: ChatServiceDependencies,
-  ) {
+  constructor(dependencies: ChatServiceDependencies) {
     this.dependencies = dependencies
   }
 
@@ -390,6 +398,7 @@ export class ChatService {
       component?: string
       postId?: string
       noteId?: string
+      calendarId?: string
       pageState?: {
         currentMonth?: number
         currentYear?: number
@@ -398,6 +407,7 @@ export class ChatService {
         [key: string]: any
       }
     },
+    toolContext?: z.infer<typeof toolContextSchema>,
   ): Promise<{ response: string; toolCalls?: any[] }> {
     // 1. Get tools (same as before)
     const contextKeys = getContextKeys(clientContext)
@@ -415,16 +425,18 @@ export class ChatService {
       model: this.dependencies.chatModel,
       tools: tools,
       systemPrompt: systemPrompt, // <-- Use the STATIC prompt
-      contextSchema: agentContextSchema, // <-- Pass the context schema
+      contextSchema: toolContextSchema, // <-- Pass the tool context schema
 
       // 3. Add the middleware
       middleware: [
-        dynamicSystemPromptMiddleware(async (_state, config: Runtime<z.infer<typeof agentContextSchema>>) => {
-          // 'config.configurable' contains our 'clientContext' and 'toolService'
-
-          console.log(JSON.stringify({ _state, config }, null, 2))
+        dynamicSystemPromptMiddleware(async (_state, _config: Runtime<z.infer<typeof toolContextSchema>>) => {
           // Run your ID-based retrieval logic
-          const dynamicContext = await loadContextualData(config.context)
+          // We need to pass repo and clientContext separately since they're not in the tool context
+          const dynamicContext = await loadContextualData({
+            clientContext: clientContext,
+            toolService: this.dependencies.toolService,
+            repo: this.dependencies.repo,
+          })
 
           console.log({ dynamicContext })
 
@@ -439,15 +451,16 @@ export class ChatService {
 
     // 5. Invoke the agent
     // We pass the full message list in the input
-    // We pass our context-aware data in the 'config.configurable' object
+    // We pass our tool context (userId, calendarId) via the context parameter
+    if (!toolContext) {
+      throw new Error('Tool context (userId, calendarId) is required')
+    }
+
     const response = await invokeAgentWithTimeout(
       agent,
       [...messages, { role: 'user' as const, content: input || '' }],
       {
-        context: {
-          clientContext: clientContext,
-          toolService: this.dependencies.toolService,
-        },
+        context: toolContext,
       },
     )
 
@@ -470,10 +483,7 @@ export class ChatService {
         agent,
         continuationMessages,
         {
-          context: {
-            clientContext: clientContext,
-            toolService: this.dependencies.toolService,
-          },
+          context: toolContext,
         },
       )
       return extractAgentResponse(continuationResponse)

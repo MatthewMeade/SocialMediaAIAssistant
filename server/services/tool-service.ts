@@ -1,29 +1,23 @@
 import { tool } from 'langchain'
 import * as z from 'zod'
+import type { ToolRuntime } from '@langchain/core/tools'
 import type { IAiDataRepository } from '../ai-service/repository'
 import type { BaseChatModel } from '@langchain/core/language_models/chat_models'
 import type { DallEAPIWrapper } from '@langchain/openai'
-import type { Post, BrandRule } from '../../shared/types'
 import { canAccessCalendar } from '../lib/auth'
 import { getBrandVoiceScore } from '../ai-service/services/grading-service'
-import {
-  generateCaptions,
-  applySuggestions,
-} from '../ai-service/services/generation-service'
-import type {
-  CaptionGenerationRequest,
-  CaptionGenerationResult,
-} from '../ai-service/schemas'
-import { savePost as dbSavePost, deletePost as dbDeletePost } from '../lib/db/posts'
+import { generateCaptions, applySuggestions } from '../ai-service/services/generation-service'
 
 /**
- * Context that is securely injected into the ToolService instance.
- * This context is validated at the route level before service instantiation.
+ * Context schema for tools - passed via LangChain runtime.
+ * This context is validated at the route level before being passed to the agent.
  */
-export interface ToolServiceContext {
-  userId: string
-  calendarId: string
-}
+export const toolContextSchema = z.object({
+  userId: z.string(),
+  calendarId: z.string(),
+})
+
+export type ToolContext = z.infer<typeof toolContextSchema>
 
 /**
  * Dependencies injected into the ToolService.
@@ -36,24 +30,18 @@ export interface ToolServiceDependencies {
 }
 
 /**
- * The ToolService is the single source of truth for all business logic and authorization.
+ * The ToolService provides AI tools for the chatbot.
  * 
- * It provides:
- * 1. Standard methods (used by API routes) - includes write operations and auth checks
- * 2. AI Tool Factory methods (used by ChatService) - creates read-only or suggestion tools
+ * All tools receive context via LangChain's runtime feature, ensuring
+ * stateless, testable, and reusable tool implementations.
  * 
- * The service is instantiated per-request with validated user context, ensuring
- * all operations are scoped to the correct user and calendar.
+ * Database write operations are NOT included here - they should be handled
+ * by API routes directly using the repository or database functions.
  */
 export class ToolService {
-  private context: ToolServiceContext
   private dependencies: ToolServiceDependencies
 
-  constructor(
-    context: ToolServiceContext,
-    dependencies: ToolServiceDependencies,
-  ) {
-    this.context = context
+  constructor(dependencies: ToolServiceDependencies) {
     this.dependencies = dependencies
   }
 
@@ -62,210 +50,19 @@ export class ToolService {
   // ============================================================================
 
   /**
-   * Gets all posts for the calendar.
-   * Includes authorization check.
-   */
-  async getPosts(): Promise<Post[]> {
-    // Verify access (defense in depth - should already be checked at route level)
-    const hasAccess = await canAccessCalendar(
-      this.context.userId,
-      this.context.calendarId,
-    )
-    if (!hasAccess) {
-      throw new Error('Forbidden: User does not have access to this calendar')
-    }
-
-    return this.dependencies.repo.getPosts(this.context.calendarId)
-  }
-
-  /**
-   * Gets a single post by ID.
-   * Includes authorization check to ensure the post belongs to the calendar.
-   */
-  async getPost(postId: string): Promise<Post | null> {
-    const hasAccess = await canAccessCalendar(
-      this.context.userId,
-      this.context.calendarId,
-    )
-    if (!hasAccess) {
-      throw new Error('Forbidden: User does not have access to this calendar')
-    }
-
-    const post = await this.dependencies.repo.getPost(postId)
-    
-    // Verify the post belongs to this calendar
-    if (post && post.calendarId !== this.context.calendarId) {
-      return null
-    }
-
-    return post
-  }
-
-  /**
-   * Gets a single note by ID.
-   * Includes authorization check to ensure the note belongs to the calendar.
-   */
-  async getNote(noteId: string): Promise<any | null> {
-    const hasAccess = await canAccessCalendar(
-      this.context.userId,
-      this.context.calendarId,
-    )
-    if (!hasAccess) {
-      throw new Error('Forbidden: User does not have access to this calendar')
-    }
-
-    // Import supabase here to avoid circular dependencies
-    const { supabase } = await import('../lib/supabase')
-    const { data: note, error } = await supabase
-      .from("notes")
-      .select("*")
-      .eq("id", noteId)
-      .eq("calendar_id", this.context.calendarId)
-      .single()
-
-    if (error || !note) {
-      return null
-    }
-
-    // Map to response format
-    return {
-      id: note.id,
-      calendarId: note.calendar_id,
-      title: note.title,
-      content: note.content,
-      createdAt: note.created_at,
-      updatedAt: note.updated_at,
-    }
-  }
-
-  /**
-   * Saves a post (create or update).
-   * Includes authorization check and author validation.
-   */
-  async savePost(post: Omit<Post, 'id'> & { id?: string }): Promise<Post | null> {
-    const hasAccess = await canAccessCalendar(
-      this.context.userId,
-      this.context.calendarId,
-    )
-    if (!hasAccess) {
-      throw new Error('Forbidden: User does not have access to this calendar')
-    }
-
-    // Ensure the post is scoped to this calendar
-    const postToSave = {
-      ...post,
-      calendarId: this.context.calendarId,
-    }
-
-    // If updating an existing post, verify the user is the author
-    if (post.id) {
-      const existingPost = await this.dependencies.repo.getPost(post.id)
-      if (!existingPost) {
-        throw new Error('Post not found')
-      }
-      if (existingPost.calendarId !== this.context.calendarId) {
-        throw new Error('Forbidden: Post does not belong to this calendar')
-      }
-      // Only the author can update their own post
-      if (existingPost.authorId !== this.context.userId) {
-        throw new Error('Forbidden: Only the author can update this post')
-      }
-    } else {
-      // For new posts, set the author
-      postToSave.authorId = this.context.userId
-    }
-
-    return dbSavePost(postToSave)
-  }
-
-  /**
-   * Deletes a post.
-   * Includes authorization check and author validation.
-   */
-  async deletePost(postId: string): Promise<boolean> {
-    const hasAccess = await canAccessCalendar(
-      this.context.userId,
-      this.context.calendarId,
-    )
-    if (!hasAccess) {
-      throw new Error('Forbidden: User does not have access to this calendar')
-    }
-
-    const post = await this.dependencies.repo.getPost(postId)
-    if (!post) {
-      return false
-    }
-
-    if (post.calendarId !== this.context.calendarId) {
-      throw new Error('Forbidden: Post does not belong to this calendar')
-    }
-
-    // Only the author can delete their own post
-    if (post.authorId !== this.context.userId) {
-      throw new Error('Forbidden: Only the author can delete this post')
-    }
-
-    return dbDeletePost(postId)
-  }
-
-  /**
-   * Gets brand rules for the calendar.
-   * Includes authorization check.
-   */
-  async getBrandRules(): Promise<BrandRule[]> {
-    const hasAccess = await canAccessCalendar(
-      this.context.userId,
-      this.context.calendarId,
-    )
-    if (!hasAccess) {
-      throw new Error('Forbidden: User does not have access to this calendar')
-    }
-
-    return this.dependencies.repo.getBrandRules(this.context.calendarId)
-  }
-
-  /**
-   * Generates a caption using AI.
-   * Includes authorization check.
-   */
-  async generateCaption(
-    request: CaptionGenerationRequest,
-  ): Promise<CaptionGenerationResult> {
-    const hasAccess = await canAccessCalendar(
-      this.context.userId,
-      this.context.calendarId,
-    )
-    if (!hasAccess) {
-      throw new Error('Forbidden: User does not have access to this calendar')
-    }
-
-    const brandRules = await this.dependencies.repo.getBrandRules(
-      this.context.calendarId,
-    )
-
-    return generateCaptions(
-      {
-        topic: request.topic,
-        existingCaption: request.existingCaption,
-      },
-      brandRules,
-      this.dependencies.creativeModel,
-      (caption, rules) =>
-        getBrandVoiceScore(caption, rules, this.dependencies.chatModel),
-    )
-  }
-
-  /**
-   * Applies suggestions to a caption.
+   * Applies suggestions to a caption using AI.
+   * This is an AI service method (not a database write), used by API routes.
    * Includes authorization check.
    */
   async applySuggestionsToCaption(
     caption: string,
     suggestions: string[],
+    context: ToolContext,
   ): Promise<string> {
+    // Verify access
     const hasAccess = await canAccessCalendar(
-      this.context.userId,
-      this.context.calendarId,
+      context.userId,
+      context.calendarId,
     )
     if (!hasAccess) {
       throw new Error('Forbidden: User does not have access to this calendar')
@@ -284,12 +81,26 @@ export class ToolService {
 
   /**
    * Creates a read-only tool for fetching posts.
-   * The tool is hard-coded to use this instance's context.
+   * The tool receives context via runtime parameter.
    */
   createGetPostsTool() {
     return tool(
-      async () => {
-        const posts = await this.getPosts()
+      async (_input: {}, runtime: ToolRuntime<{}, typeof toolContextSchema>) => {
+        const context = runtime.context
+        if (!context) {
+          throw new Error('Context is required')
+        }
+
+        // Verify access
+        const hasAccess = await canAccessCalendar(
+          context.userId,
+          context.calendarId,
+        )
+        if (!hasAccess) {
+          throw new Error('Forbidden: User does not have access to this calendar')
+        }
+
+        const posts = await this.dependencies.repo.getPosts(context.calendarId)
         // Return a simplified representation for the AI
         return posts.map((p) => ({
           id: p.id,
@@ -314,15 +125,34 @@ export class ToolService {
    */
   createGetCurrentPostTool(postId?: string) {
     return tool(
-      async () => {
+      async (_input: {}, runtime: ToolRuntime<{}, typeof toolContextSchema>) => {
+        const context = runtime.context
+        if (!context) {
+          throw new Error('Context is required')
+        }
+
         // Use provided postId or try to get from context if available
         const targetPostId = postId
         if (!targetPostId) {
           return { error: 'No post ID provided' }
         }
 
-        const post = await this.getPost(targetPostId)
+        // Verify access
+        const hasAccess = await canAccessCalendar(
+          context.userId,
+          context.calendarId,
+        )
+        if (!hasAccess) {
+          throw new Error('Forbidden: User does not have access to this calendar')
+        }
+
+        const post = await this.dependencies.repo.getPost(targetPostId)
         if (!post) {
+          return { error: 'Post not found' }
+        }
+
+        // Verify the post belongs to this calendar
+        if (post.calendarId !== context.calendarId) {
           return { error: 'Post not found' }
         }
 
@@ -348,18 +178,46 @@ export class ToolService {
 
   /**
    * Creates a tool for generating captions.
-   * The tool is hard-coded to use this instance's context.
+   * The tool receives context via runtime parameter.
    */
   createGenerateCaptionTool() {
     return tool(
-      async (input: {
-        topic: string
-        existingCaption?: string
-      }) => {
-        const result = await this.generateCaption({
-          topic: input.topic,
-          existingCaption: input.existingCaption,
-        })
+      async (
+        input: {
+          topic: string
+          existingCaption?: string
+        },
+        runtime: ToolRuntime<{}, typeof toolContextSchema>,
+      ) => {
+        const context = runtime.context
+        if (!context) {
+          throw new Error('Context is required')
+        }
+
+        // Verify access
+        const hasAccess = await canAccessCalendar(
+          context.userId,
+          context.calendarId,
+        )
+        if (!hasAccess) {
+          throw new Error('Forbidden: User does not have access to this calendar')
+        }
+
+        const brandRules = await this.dependencies.repo.getBrandRules(
+          context.calendarId,
+        )
+
+        const result = await generateCaptions(
+          {
+            topic: input.topic,
+            existingCaption: input.existingCaption,
+          },
+          brandRules,
+          this.dependencies.creativeModel,
+          (caption, rules) =>
+            getBrandVoiceScore(caption, rules, this.dependencies.chatModel),
+        )
+
         return {
           caption: result.caption,
           score: result.score?.overall ?? null,
@@ -388,7 +246,30 @@ export class ToolService {
    */
   createApplyCaptionTool() {
     return tool(
-      async (input: { postId: string; caption: string }) => {
+      async (
+        input: { postId: string; caption: string },
+        runtime: ToolRuntime<{}, typeof toolContextSchema>,
+      ) => {
+        const context = runtime.context
+        if (!context) {
+          throw new Error('Context is required')
+        }
+
+        // Verify access
+        const hasAccess = await canAccessCalendar(
+          context.userId,
+          context.calendarId,
+        )
+        if (!hasAccess) {
+          throw new Error('Forbidden: User does not have access to this calendar')
+        }
+
+        // Verify the post belongs to this calendar
+        const post = await this.dependencies.repo.getPost(input.postId)
+        if (!post || post.calendarId !== context.calendarId) {
+          throw new Error('Post not found')
+        }
+
         // This is a suggestion tool - the actual write happens on the client
         // We just return a message that the client will handle
         return `Caption suggestion ready for post ${input.postId}. The client will apply this change.`
@@ -412,9 +293,17 @@ export class ToolService {
    */
   createNavigateToPageTool() {
     return tool(
-      async (input: { page: string; label?: string }) => {
+      async (
+        input: { page?: string; label?: string },
+        runtime: ToolRuntime<{}, typeof toolContextSchema>,
+      ) => {
+        // Verify context exists (no auth needed for navigation)
+        if (!runtime.context) {
+          throw new Error('Context is required')
+        }
+
         // This is a client-side tool - the actual navigation happens on the client
-        return `Navigation requested to ${input.page}. The client will handle this.`
+        return `Navigation requested to ${input.page || 'calendar'}. The client will handle this.`
       },
       {
         name: 'navigate_to_calendar',
@@ -438,8 +327,22 @@ export class ToolService {
    */
   createGetBrandRulesTool() {
     return tool(
-      async () => {
-        const rules = await this.getBrandRules()
+      async (_input: {}, runtime: ToolRuntime<{}, typeof toolContextSchema>) => {
+        const context = runtime.context
+        if (!context) {
+          throw new Error('Context is required')
+        }
+
+        // Verify access
+        const hasAccess = await canAccessCalendar(
+          context.userId,
+          context.calendarId,
+        )
+        if (!hasAccess) {
+          throw new Error('Forbidden: User does not have access to this calendar')
+        }
+
+        const rules = await this.dependencies.repo.getBrandRules(context.calendarId)
         const enabledRules = rules.filter((r) => r.enabled)
         
         if (enabledRules.length === 0) {
@@ -468,52 +371,44 @@ export class ToolService {
   }
 
   /**
-   * Grades a caption against brand voice rules.
-   * Returns the brand score, rule breakdown, and suggestions.
-   */
-  async gradeCaption(caption: string): Promise<{
-    overall: number
-    rules: Array<{ ruleId: string; score: number; feedback: string }>
-    suggestions: string[]
-  }> {
-    const hasAccess = await canAccessCalendar(
-      this.context.userId,
-      this.context.calendarId,
-    )
-    if (!hasAccess) {
-      throw new Error('Forbidden: User does not have access to this calendar')
-    }
-
-    const brandRules = await this.dependencies.repo.getBrandRules(
-      this.context.calendarId,
-    )
-
-    const score = await getBrandVoiceScore(
-      caption,
-      brandRules,
-      this.dependencies.chatModel,
-    )
-
-    return {
-      overall: score.overall,
-      rules: score.rules,
-      suggestions: score.suggestions,
-    }
-  }
-
-  /**
    * Creates a tool for grading a caption against brand voice rules.
    * Useful when the AI needs to evaluate an existing caption.
    */
   createGradeCaptionTool() {
     return tool(
-      async (input: { caption: string }) => {
-        const result = await this.gradeCaption(input.caption)
+      async (
+        input: { caption: string },
+        runtime: ToolRuntime<{}, typeof toolContextSchema>,
+      ) => {
+        const context = runtime.context
+        if (!context) {
+          throw new Error('Context is required')
+        }
+
+        // Verify access
+        const hasAccess = await canAccessCalendar(
+          context.userId,
+          context.calendarId,
+        )
+        if (!hasAccess) {
+          throw new Error('Forbidden: User does not have access to this calendar')
+        }
+
+        const brandRules = await this.dependencies.repo.getBrandRules(
+          context.calendarId,
+        )
+
+        const score = await getBrandVoiceScore(
+          input.caption,
+          brandRules,
+          this.dependencies.chatModel,
+        )
+
         return {
-          overall: result.overall,
-          rules: result.rules,
-          suggestions: result.suggestions,
-          message: `Caption scored ${result.overall}/100. ${result.suggestions.length} suggestion(s) provided.`,
+          overall: score.overall,
+          rules: score.rules,
+          suggestions: score.suggestions,
+          message: `Caption scored ${score.overall}/100. ${score.suggestions.length} suggestion(s) provided.`,
         }
       },
       {
@@ -533,7 +428,15 @@ export class ToolService {
    */
   createCreatePostTool() {
     return tool(
-      async (input: { date: string; label?: string }) => {
+      async (
+        input: { date: string; label?: string },
+        runtime: ToolRuntime<{}, typeof toolContextSchema>,
+      ) => {
+        // Verify context exists (no auth needed for client-side tool)
+        if (!runtime.context) {
+          throw new Error('Context is required')
+        }
+
         // This is a client-side tool - the actual post creation happens on the client
         return `Post creation requested for ${input.date}. The client will open the post editor.`
       },
@@ -563,7 +466,30 @@ export class ToolService {
    */
   createOpenPostTool() {
     return tool(
-      async (input: { postId: string; label?: string }) => {
+      async (
+        input: { postId: string; label?: string },
+        runtime: ToolRuntime<{}, typeof toolContextSchema>,
+      ) => {
+        const context = runtime.context
+        if (!context) {
+          throw new Error('Context is required')
+        }
+
+        // Verify access
+        const hasAccess = await canAccessCalendar(
+          context.userId,
+          context.calendarId,
+        )
+        if (!hasAccess) {
+          throw new Error('Forbidden: User does not have access to this calendar')
+        }
+
+        // Verify the post exists and belongs to this calendar
+        const post = await this.dependencies.repo.getPost(input.postId)
+        if (!post || post.calendarId !== context.calendarId) {
+          throw new Error('Post not found')
+        }
+
         // This is a client-side tool - the actual navigation happens on the client
         return `Open post requested for ${input.postId}. The client will open the post editor.`
       },
@@ -583,4 +509,3 @@ export class ToolService {
     )
   }
 }
-

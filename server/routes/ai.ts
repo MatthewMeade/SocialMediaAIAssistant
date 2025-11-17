@@ -42,16 +42,12 @@ app.post('/grade-caption', async (c) => {
     return c.json({ error: 'Forbidden' }, 403)
   }
 
-  // 2. **Execute:** Use ToolService to grade the caption
+  // 2. **Execute:** Use repository to get brand rules and grade the caption
   try {
     const repo = new LocalDataRepository()
-    const toolService = new ToolService(
-      { userId: user.id, calendarId },
-      { repo, chatModel, creativeModel, imageGenerator },
-    )
 
     // Get brand rules and grade the caption
-    const brandRules = await toolService.getBrandRules()
+    const brandRules = await repo.getBrandRules(calendarId)
     const { getBrandVoiceScore } = await import(
       '../ai-service/services/grading-service'
     )
@@ -95,12 +91,20 @@ app.post('/generate-caption', async (c) => {
   // 2. **Execute:**
   try {
     const repo = new LocalDataRepository()
-    const toolService = new ToolService(
-      { userId: user.id, calendarId },
-      { repo, chatModel, creativeModel, imageGenerator },
+    const brandRules = await repo.getBrandRules(calendarId)
+    const { generateCaptions } = await import(
+      '../ai-service/services/generation-service'
+    )
+    const { getBrandVoiceScore } = await import(
+      '../ai-service/services/grading-service'
     )
 
-    const result = await toolService.generateCaption(request)
+    const result = await generateCaptions(
+      request,
+      brandRules,
+      creativeModel,
+      (caption, rules) => getBrandVoiceScore(caption, rules, chatModel),
+    )
     return c.json(result)
   } catch (error: any) {
     console.error('[AI_ROUTE] Error generating caption:', error)
@@ -144,14 +148,17 @@ app.post('/apply-suggestions', async (c) => {
   // 2. **Execute:**
   try {
     const repo = new LocalDataRepository()
-    const toolService = new ToolService(
-      { userId: user.id, calendarId },
-      { repo, chatModel, creativeModel, imageGenerator },
-    )
+    const toolService = new ToolService({
+      repo,
+      chatModel,
+      creativeModel,
+      imageGenerator,
+    })
 
     const newCaption = await toolService.applySuggestionsToCaption(
       caption,
       suggestions,
+      { userId: user.id, calendarId },
     )
     return c.json({ newCaption })
   } catch (error: any) {
@@ -247,20 +254,32 @@ app.post('/chat', async (c) => {
 
     // Instantiate services with validated context
     const repo = new LocalDataRepository()
-    const toolService = new ToolService(
-      { userId: user.id, calendarId },
-      { repo, chatModel, creativeModel, imageGenerator },
-    )
-    const chatService = new ChatService(
-      { userId: user.id, calendarId },
-      { repo, toolService, chatModel, creativeModel, imageGenerator },
-    )
+    const toolService = new ToolService({
+      repo,
+      chatModel,
+      creativeModel,
+      imageGenerator,
+    })
+    const chatService = new ChatService({
+      repo,
+      toolService,
+      chatModel,
+      creativeModel,
+      imageGenerator,
+    })
 
     // Run the chat with clientContext to determine which tools are available
+    // Pass tool context (userId, calendarId) via runtime
+    // Ensure calendarId is in clientContext for brand rules loading
+    const enrichedClientContext = {
+      ...clientContext,
+      calendarId: clientContext?.calendarId || calendarId,
+    }
     const result = await chatService.runChat(
       input || '',
       history || [],
-      clientContext,
+      enrichedClientContext,
+      { userId: user.id, calendarId },
     )
 
     const duration = Date.now() - startTime

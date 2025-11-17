@@ -1,7 +1,8 @@
-import type { BrandRule, Post, MediaItem } from '../../shared/types'
+import type { BrandRule, Post, MediaItem, Note } from '../../shared/types'
 import { getBrandRules as dbGetBrandRules } from '../lib/db/brand-voice'
 import { getPosts as dbGetPosts, getPostById as dbGetPostById } from '../lib/db/posts'
 import { getMediaByCalendar as dbGetMediaByCalendar } from '../lib/db/media'
+import { getNoteById as dbGetNoteById } from '../lib/db/notes'
 
 /**
  * Interface for the AI service to fetch data.
@@ -14,6 +15,7 @@ export interface IAiDataRepository {
   getBrandRules(calendarId: string): Promise<BrandRule[]>
   getPosts(calendarId: string): Promise<Post[]>
   getPost(postId: string): Promise<Post | null>
+  getNote(noteId: string): Promise<Note | null>
   getMediaByCalendar(calendarId: string): Promise<MediaItem[]>
 }
 
@@ -55,6 +57,15 @@ export class LocalDataRepository implements IAiDataRepository {
     } catch (error) {
       console.error(`[AI_REPO] Error fetching media for calendar ${calendarId}:`, error)
       return []
+    }
+  }
+
+  async getNote(noteId: string): Promise<Note | null> {
+    try {
+      return await dbGetNoteById(noteId)
+    } catch (error) {
+      console.error(`[AI_REPO] Error fetching note ${noteId}:`, error)
+      return null
     }
   }
 }
