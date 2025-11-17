@@ -1,4 +1,4 @@
-import { createAgent, dynamicSystemPromptMiddleware } from 'langchain'
+import { createAgent, dynamicSystemPromptMiddleware, Runtime } from 'langchain'
 import type { IAiDataRepository } from '../ai-service/repository'
 import type { BaseChatModel } from '@langchain/core/language_models/chat_models'
 import type { DallEAPIWrapper } from '@langchain/openai'
@@ -110,18 +110,15 @@ const agentContextSchema = z.object({
  * It reads the clientContext (passed via config.configurable) and fetches
  * specific documents by ID, not by semantic search.
  */
-async function loadContextualData(config: {
-  configurable?: {
-    clientContext?: any
-    toolService?: ToolService
-  }
-}): Promise<string> {
-  const { clientContext, toolService } = config.configurable || {}
+async function loadContextualData(config: z.infer<typeof agentContextSchema>): Promise<string> {
+  const { clientContext, toolService } = config
   const contextParts: string[] = []
 
   if (!clientContext || !toolService) {
     return '' // No context to inject
   }
+
+  console.log({ clientContext })
 
   // 1. Post context (fetch by ID)
   if (clientContext.postId) {
@@ -242,7 +239,7 @@ function convertHistoryToLangChainMessages(
 async function invokeAgentWithTimeout(
   agent: ReturnType<typeof createAgent>,
   input: any[],
-  config?: { configurable?: any },
+  config?: { context?: z.infer<typeof agentContextSchema> },
 ) {
   const invokePromise = agent.invoke({ messages: input }, config)
 
@@ -422,16 +419,14 @@ export class ChatService {
 
       // 3. Add the middleware
       middleware: [
-        dynamicSystemPromptMiddleware(async (_state, config) => {
+        dynamicSystemPromptMiddleware(async (_state, config: Runtime<z.infer<typeof agentContextSchema>>) => {
           // 'config.configurable' contains our 'clientContext' and 'toolService'
 
+          console.log(JSON.stringify({ _state, config }, null, 2))
           // Run your ID-based retrieval logic
-          const dynamicContext = await loadContextualData({
-            configurable: config.configurable as {
-              clientContext?: any
-              toolService?: ToolService
-            },
-          })
+          const dynamicContext = await loadContextualData(config.context)
+
+          console.log({ dynamicContext })
 
           // Return the dynamic context string to be appended to the system prompt
           return dynamicContext
@@ -449,7 +444,7 @@ export class ChatService {
       agent,
       [...messages, { role: 'user' as const, content: input || '' }],
       {
-        configurable: {
+        context: {
           clientContext: clientContext,
           toolService: this.dependencies.toolService,
         },
@@ -475,7 +470,7 @@ export class ChatService {
         agent,
         continuationMessages,
         {
-          configurable: {
+          context: {
             clientContext: clientContext,
             toolService: this.dependencies.toolService,
           },
