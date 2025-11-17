@@ -10,6 +10,7 @@ import {
   Sparkles,
   ChevronDown,
   Plus,
+  NotebookText,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar"
@@ -36,6 +37,7 @@ const sections = [
   { id: "calendar", label: "Calendar", icon: Calendar },
   { id: "library", label: "Library", icon: ImageIcon },
   { id: "brand-voice", label: "Brand Voice", icon: Sparkles },
+  { id: "notes", label: "Notes", icon: NotebookText },
 ]
 
 export function AppSidebar({ calendars, currentCalendar }: AppSidebarProps) {

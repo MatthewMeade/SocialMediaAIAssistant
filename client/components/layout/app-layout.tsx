@@ -61,6 +61,8 @@ export default function AppLayout() {
       return "brandVoice"
     } else if (location.pathname.includes("/library")) {
       return "library"
+    } else if (location.pathname.includes("/notes")) {
+      return "notes"
     }
     return "calendar"
   }, [location.pathname])

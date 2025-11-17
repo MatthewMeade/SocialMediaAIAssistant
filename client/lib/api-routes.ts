@@ -17,5 +17,6 @@ export const ApiRoutes = {
   INBOX: "/api/inbox",
   HEALTH: "/api/health",
   ORGANIZATION: "/api/organization", // Add new route
+  NOTES: "/api/notes",
 } as const;
 

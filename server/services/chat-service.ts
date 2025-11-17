@@ -137,6 +137,36 @@ async function loadContextualData(config: {
     }
   }
 
+  // 1b. Note context (fetch by ID)
+  if (clientContext.noteId) {
+    try {
+      const note = await toolService.getNote(clientContext.noteId)
+      if (note) {
+        // Extract text content from Slate JSON for context
+        const extractText = (content: any): string => {
+          if (!content || !Array.isArray(content)) return ''
+          return content
+            .map((node: any) => {
+              if (node.children) {
+                return node.children
+                  .map((child: any) => child.text || '')
+                  .join('')
+              }
+              return ''
+            })
+            .join('\n')
+            .trim()
+        }
+        const noteText = extractText(note.content)
+        contextParts.push(
+          `**Current Note:**\nThe user is currently viewing/editing a note:\n- Note ID: ${note.id}\n- Title: ${note.title}\n- Content: ${noteText || '(Empty note)'}\n\nWhen the user asks about "this note" or "the current note", they are referring to this note.`,
+        )
+      }
+    } catch (error) {
+      console.error('[ContextLoader] Error fetching note:', error)
+    }
+  }
+
   // 2. Brand Voice context (fetch all for calendar)
   try {
     const brandRules = await toolService.getBrandRules()
@@ -362,10 +392,12 @@ export class ChatService {
       page?: string
       component?: string
       postId?: string
+      noteId?: string
       pageState?: {
         currentMonth?: number
         currentYear?: number
         postId?: string
+        noteId?: string
         [key: string]: any
       }
     },

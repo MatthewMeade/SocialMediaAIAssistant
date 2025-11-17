@@ -5,6 +5,7 @@ import LoginPage from "./pages/login"
 import CalendarPage from "./pages/calendar"
 import LibraryPage from "./pages/library"
 import BrandVoicePage from "./pages/brand-voice"
+import NotesPage from "./pages/notes"
 import ProfilePage from "./pages/profile"
 import SettingsPage from "./pages/settings"
 import AppLayout from "../components/layout/app-layout"
@@ -55,6 +56,7 @@ export default function App() {
         <Route path="calendar" element={<CalendarPage />} />
         <Route path="library" element={<LibraryPage />} />
         <Route path="brand-voice" element={<BrandVoicePage />} />
+        <Route path="notes" element={<NotesPage />} />
         <Route path="profile" element={<ProfilePage />} />
         <Route path="settings" element={<SettingsPage />} />
       </Route>

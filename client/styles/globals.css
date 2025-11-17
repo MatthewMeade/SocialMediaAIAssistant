@@ -123,3 +123,25 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* Slate editor text selection styles */
+.slate-editor ::selection {
+  background-color: #3b82f6;
+  color: white;
+}
+
+.slate-editor ::-moz-selection {
+  background-color: #3b82f6;
+  color: white;
+}
+
+/* Dark mode selection */
+.dark .slate-editor ::selection {
+  background-color: #60a5fa;
+  color: #1e293b;
+}
+
+.dark .slate-editor ::-moz-selection {
+  background-color: #60a5fa;
+  color: #1e293b;
+}

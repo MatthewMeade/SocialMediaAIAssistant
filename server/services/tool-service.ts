@@ -102,6 +102,43 @@ export class ToolService {
   }
 
   /**
+   * Gets a single note by ID.
+   * Includes authorization check to ensure the note belongs to the calendar.
+   */
+  async getNote(noteId: string): Promise<any | null> {
+    const hasAccess = await canAccessCalendar(
+      this.context.userId,
+      this.context.calendarId,
+    )
+    if (!hasAccess) {
+      throw new Error('Forbidden: User does not have access to this calendar')
+    }
+
+    // Import supabase here to avoid circular dependencies
+    const { supabase } = await import('../lib/supabase')
+    const { data: note, error } = await supabase
+      .from("notes")
+      .select("*")
+      .eq("id", noteId)
+      .eq("calendar_id", this.context.calendarId)
+      .single()
+
+    if (error || !note) {
+      return null
+    }
+
+    // Map to response format
+    return {
+      id: note.id,
+      calendarId: note.calendar_id,
+      title: note.title,
+      content: note.content,
+      createdAt: note.created_at,
+      updatedAt: note.updated_at,
+    }
+  }
+
+  /**
    * Saves a post (create or update).
    * Includes authorization check and author validation.
    */

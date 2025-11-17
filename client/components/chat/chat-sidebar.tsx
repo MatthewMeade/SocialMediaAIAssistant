@@ -700,11 +700,12 @@ export function ChatSidebar({ isOpen, onClose }: ChatSidebarProps) {
       }
 
       // Build the clientContext object from the AppContext
-      // The backend expects: { page?, component?, postId?, pageState? }
+      // The backend expects: { page?, component?, postId?, noteId?, pageState? }
       const backendClientContext = {
         page: clientContext.page === 'postEditor' ? 'calendar' : clientContext.page,
         component: clientContext.page === 'postEditor' ? 'postEditor' : undefined,
         postId: clientContext.pageState?.postId || undefined,
+        noteId: clientContext.pageState?.noteId || undefined,
         pageState: clientContext.pageState || undefined,
       }
 

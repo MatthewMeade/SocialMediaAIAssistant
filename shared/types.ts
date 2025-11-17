@@ -96,3 +96,12 @@ export interface MediaItem {
   type: string
   createdAt: Date
 }
+
+export interface Note {
+  id: string
+  calendarId: string
+  title: string
+  content: any // Slate JSON content
+  createdAt: Date
+  updatedAt: Date
+}
