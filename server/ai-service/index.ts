@@ -1,4 +1,14 @@
-import { IAiDataRepository, LocalDataRepository } from './repository'
+// This service is not currently used in the routes.
+// Routes create repository instances directly with userId and calendarId.
+// If you want to use this service in the future, uncomment the code below and ensure
+// you pass a repository instance with userId and calendarId:
+//
+// Example usage:
+//   const repo = new LocalDataRepository(userId, calendarId)
+//   const aiService = new AiService(repo, { chatModel, creativeModel, imageGenerator })
+
+/*
+import type { IAiDataRepository } from './repository'
 import { chatModel, creativeModel, imageGenerator } from './models'
 import { getBrandVoiceScore } from './services/grading-service'
 import type { BrandScore } from './schemas'
@@ -28,32 +38,15 @@ class AiService {
     this.models = models
   }
 
-  /**
-   * Public method for the "Brand Voice Content Grader" tool.
-   * It fetches auth-scoped data and then calls the pure grading service.
-   */
-  async gradeCaption(caption: string, calendarId: string): Promise<BrandScore> {
-    // 1. Fetch data securely using the repository and context
-    const brandRules = await this.repo.getBrandRules(calendarId)
-
-    // 2. Call the pure AI service
+  async gradeCaption(caption: string): Promise<BrandScore> {
+    const brandRules = await this.repo.getBrandRules()
     return getBrandVoiceScore(caption, brandRules, this.models.chatModel)
   }
 
-  /**
-   * Public method for the "Caption Generator" tool.
-   * Fetches auth-scoped data and calls the generation/refinement service.
-   */
   async generateCaptions(
     request: CaptionGenerationRequest,
-    calendarId: string,
   ): Promise<CaptionGenerationResult> {
-    // 1. Fetch data securely
-    const brandRules = await this.repo.getBrandRules(calendarId)
-
-    // 2. Call the AI service
-    // Use the powerful model for creative generation
-    // Use the faster model for grading
+    const brandRules = await this.repo.getBrandRules()
     return await generateCaptions(
       request,
       brandRules,
@@ -63,23 +56,13 @@ class AiService {
     )
   }
 
-  /**
-   * Public method for the "Apply Suggestions" tool.
-   * Calls the simple suggestion application service.
-   */
   async applySuggestions(
     caption: string,
     suggestions: string[],
   ): Promise<string> {
-    // Call the pure AI service
-    // Use the faster model for this direct refinement task
     return await applySuggestions(caption, suggestions, this.models.chatModel)
   }
 
-  /**
-   * Public method for generating and saving an image.
-   * Generates an image using DALL-E, downloads it, and stores it in Supabase.
-   */
   async generateAndSaveImage(
     prompt: string,
     calendarId: string,
@@ -92,11 +75,7 @@ class AiService {
       this.models.imageGenerator,
     )
   }
-
 }
 
-// Initialize the service with the local repository
-// This is the single instance your server will use.
-const aiService = new AiService(new LocalDataRepository(), { chatModel, creativeModel, imageGenerator })
-
 export default aiService
+*/

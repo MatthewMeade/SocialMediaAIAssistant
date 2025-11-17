@@ -1,6 +1,6 @@
 import { Hono } from 'hono'
 import type { User } from '@supabase/supabase-js'
-import { requireAuth, isUser, canAccessCalendar } from '../lib/auth'
+import { requireAuth, isUser } from '../lib/auth'
 import { LocalDataRepository } from '../ai-service/repository'
 import { ToolService } from '../services/tool-service'
 import { ChatService } from '../services/chat-service'
@@ -38,18 +38,12 @@ app.post('/grade-caption', async (c) => {
     return c.json({ error: 'caption and calendarId are required' }, 400)
   }
 
-  // 1. **Authorize:** Check if the user can access this calendar
-  const hasAccess = await canAccessCalendar(user.id, calendarId)
-  if (!hasAccess) {
-    return c.json({ error: 'Forbidden' }, 403)
-  }
-
-  // 2. **Execute:** Use repository to get brand rules and grade the caption
+  // Execute: Repository handles auth internally
   try {
-    const repo = new LocalDataRepository()
+    const repo = new LocalDataRepository(user.id, calendarId)
 
     // Get brand rules and grade the caption
-    const brandRules = await repo.getBrandRules(calendarId)
+    const brandRules = await repo.getBrandRules()
     const score = await getBrandVoiceScore(
       caption,
       brandRules,
@@ -58,6 +52,9 @@ app.post('/grade-caption', async (c) => {
     return c.json(score)
   } catch (error: any) {
     console.error('[AI_ROUTE] Error grading caption:', error)
+    if (error.message?.includes('Forbidden')) {
+      return c.json({ error: 'Forbidden' }, 403)
+    }
     return c.json({ error: 'Failed to grade caption', details: error.message }, 500)
   }
 })
@@ -81,16 +78,10 @@ app.post('/generate-caption', async (c) => {
     return c.json({ error: 'calendarId and request object are required' }, 400)
   }
 
-  // 1. **Authorize:**
-  const hasAccess = await canAccessCalendar(user.id, calendarId)
-  if (!hasAccess) {
-    return c.json({ error: 'Forbidden' }, 403)
-  }
-
-  // 2. **Execute:**
+  // Execute: Repository handles auth internally
   try {
-    const repo = new LocalDataRepository()
-    const brandRules = await repo.getBrandRules(calendarId)
+    const repo = new LocalDataRepository(user.id, calendarId)
+    const brandRules = await repo.getBrandRules()
 
     const result = await generateCaptions(
       request,
@@ -101,6 +92,9 @@ app.post('/generate-caption', async (c) => {
     return c.json(result)
   } catch (error: any) {
     console.error('[AI_ROUTE] Error generating caption:', error)
+    if (error.message?.includes('Forbidden')) {
+      return c.json({ error: 'Forbidden' }, 403)
+    }
     return c.json(
       { error: 'Failed to generate caption', details: error.message },
       500,
@@ -132,15 +126,9 @@ app.post('/apply-suggestions', async (c) => {
     )
   }
 
-  // 1. **Authorize:**
-  const hasAccess = await canAccessCalendar(user.id, calendarId)
-  if (!hasAccess) {
-    return c.json({ error: 'Forbidden' }, 403)
-  }
-
-  // 2. **Execute:**
+  // Execute: Repository handles auth internally
   try {
-    const repo = new LocalDataRepository()
+    const repo = new LocalDataRepository(user.id, calendarId)
     const toolService = new ToolService({
       repo,
       chatModel,
@@ -156,6 +144,9 @@ app.post('/apply-suggestions', async (c) => {
     return c.json({ newCaption })
   } catch (error: any) {
     console.error('[AI_ROUTE] Error applying suggestions:', error)
+    if (error.message?.includes('Forbidden')) {
+      return c.json({ error: 'Forbidden' }, 403)
+    }
     return c.json(
       { error: 'Failed to apply suggestions', details: error.message },
       500,
@@ -179,14 +170,13 @@ app.post('/generate-image', async (c) => {
     return c.json({ error: 'calendarId and prompt are required' }, 400)
   }
 
-  // 1. **Authorize:**
-  const hasAccess = await canAccessCalendar(user.id, calendarId)
-  if (!hasAccess) {
-    return c.json({ error: 'Forbidden' }, 403)
-  }
-
-  // 2. **Execute:**
+  // Execute: Verify access before generating image
+  // (Image generation service doesn't use repo, so we check auth here)
   try {
+    const repo = new LocalDataRepository(user.id, calendarId)
+    // Verify access by attempting to get brand rules (which checks auth)
+    await repo.getBrandRules()
+
     // Image generation is still handled by the pure service function
     // This can be moved to ToolService in a future refactor if needed
     const newMediaItem = await generateAndStoreImage(
@@ -198,6 +188,9 @@ app.post('/generate-image', async (c) => {
     return c.json(newMediaItem)
   } catch (error: any) {
     console.error('[AI_ROUTE] Error generating image:', error)
+    if (error.message?.includes('Forbidden')) {
+      return c.json({ error: 'Forbidden' }, 403)
+    }
     return c.json(
       { error: 'Failed to generate image', details: error.message },
       500,
@@ -230,13 +223,6 @@ app.post('/chat', async (c) => {
     return c.json({ error: 'input is required' }, 400)
   }
 
-  // Verify user has access to this calendar
-  // Prevents users from accessing other calendars' data through the chat
-  const hasAccess = await canAccessCalendar(user.id, calendarId)
-  if (!hasAccess) {
-    return c.json({ error: 'Forbidden' }, 403)
-  }
-
   try {
     console.log(`[AI_ROUTE] Starting chat request for user ${user.id}, calendar ${calendarId}`)
 
@@ -245,8 +231,8 @@ app.post('/chat', async (c) => {
     const conversationThreadId = threadId || `${user.id}-${calendarId}`
     const startTime = Date.now()
 
-    // Instantiate services with validated context
-    const repo = new LocalDataRepository()
+    // Instantiate services with repository that handles auth internally
+    const repo = new LocalDataRepository(user.id, calendarId)
     const toolService = new ToolService({
       repo,
       chatModel,
@@ -285,6 +271,9 @@ app.post('/chat', async (c) => {
     })
   } catch (error: any) {
     console.error('[AI_ROUTE] Error in chat agent:', error)
+    if (error.message?.includes('Forbidden')) {
+      return c.json({ error: 'Forbidden' }, 403)
+    }
     return c.json({ error: 'Chat failed', details: error.message }, 500)
   }
 })

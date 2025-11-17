@@ -172,27 +172,24 @@ async function loadContextualData(config: AgentContextConfig): Promise<string> {
   }
 
   // 2. Brand Voice context (fetch all for calendar)
-  // Note: We need calendarId from clientContext, but it's not always available
-  // For now, we'll skip this if calendarId is not available
-  if (clientContext.calendarId) {
-    try {
-      const brandRules = await repo.getBrandRules(clientContext.calendarId)
-      const enabledRules = brandRules.filter((r) => r.enabled)
-      if (enabledRules.length > 0) {
-        const rulesText = enabledRules
-          .map((r) => `- **${r.title}:** ${r.description}`)
-          .join('\n')
-        contextParts.push(
-          `**Brand Voice Rules:**\nThe following brand voice rules are active for this calendar:\n${rulesText}\n\nAlways follow these rules when generating or suggesting content. When grading content, evaluate it against these rules.`,
-        )
-      } else {
-        contextParts.push(
-          '**Brand Voice Rules:**\nNo active brand voice rules are currently configured for this calendar.',
-        )
-      }
-    } catch (error) {
-      console.error('[ContextLoader] Error fetching brand rules:', error)
+  // Repository is already scoped to a specific calendarId, so we can fetch brand rules directly
+  try {
+    const brandRules = await repo.getBrandRules()
+    const enabledRules = brandRules.filter((r) => r.enabled)
+    if (enabledRules.length > 0) {
+      const rulesText = enabledRules
+        .map((r) => `- **${r.title}:** ${r.description}`)
+        .join('\n')
+      contextParts.push(
+        `**Brand Voice Rules:**\nThe following brand voice rules are active for this calendar:\n${rulesText}\n\nAlways follow these rules when generating or suggesting content. When grading content, evaluate it against these rules.`,
+      )
+    } else {
+      contextParts.push(
+        '**Brand Voice Rules:**\nNo active brand voice rules are currently configured for this calendar.',
+      )
     }
+  } catch (error) {
+    console.error('[ContextLoader] Error fetching brand rules:', error)
   }
 
   // 3. Add current date context

@@ -4,7 +4,6 @@ import type { ToolRuntime } from '@langchain/core/tools'
 import type { IAiDataRepository } from '../ai-service/repository'
 import type { BaseChatModel } from '@langchain/core/language_models/chat_models'
 import type { DallEAPIWrapper } from '@langchain/openai'
-import { canAccessCalendar } from '../lib/auth'
 import { getBrandVoiceScore } from '../ai-service/services/grading-service'
 import { generateCaptions, applySuggestions } from '../ai-service/services/generation-service'
 
@@ -52,22 +51,14 @@ export class ToolService {
   /**
    * Applies suggestions to a caption using AI.
    * This is an AI service method (not a database write), used by API routes.
-   * Includes authorization check.
+   * Authorization is handled by the repository.
    */
   async applySuggestionsToCaption(
     caption: string,
     suggestions: string[],
-    context: ToolContext,
+    _context: ToolContext,
   ): Promise<string> {
-    // Verify access
-    const hasAccess = await canAccessCalendar(
-      context.userId,
-      context.calendarId,
-    )
-    if (!hasAccess) {
-      throw new Error('Forbidden: User does not have access to this calendar')
-    }
-
+    // Repository handles auth internally
     return applySuggestions(
       caption,
       suggestions,
@@ -91,16 +82,8 @@ export class ToolService {
           throw new Error('Context is required')
         }
 
-        // Verify access
-        const hasAccess = await canAccessCalendar(
-          context.userId,
-          context.calendarId,
-        )
-        if (!hasAccess) {
-          throw new Error('Forbidden: User does not have access to this calendar')
-        }
-
-        const posts = await this.dependencies.repo.getPosts(context.calendarId)
+        // Repository handles auth internally
+        const posts = await this.dependencies.repo.getPosts()
         // Return a simplified representation for the AI
         return posts.map((p) => ({
           id: p.id,
@@ -137,22 +120,9 @@ export class ToolService {
           return { error: 'No post ID provided' }
         }
 
-        // Verify access
-        const hasAccess = await canAccessCalendar(
-          context.userId,
-          context.calendarId,
-        )
-        if (!hasAccess) {
-          throw new Error('Forbidden: User does not have access to this calendar')
-        }
-
+        // Repository handles auth and verifies post belongs to calendar
         const post = await this.dependencies.repo.getPost(targetPostId)
         if (!post) {
-          return { error: 'Post not found' }
-        }
-
-        // Verify the post belongs to this calendar
-        if (post.calendarId !== context.calendarId) {
           return { error: 'Post not found' }
         }
 
@@ -194,18 +164,8 @@ export class ToolService {
           throw new Error('Context is required')
         }
 
-        // Verify access
-        const hasAccess = await canAccessCalendar(
-          context.userId,
-          context.calendarId,
-        )
-        if (!hasAccess) {
-          throw new Error('Forbidden: User does not have access to this calendar')
-        }
-
-        const brandRules = await this.dependencies.repo.getBrandRules(
-          context.calendarId,
-        )
+        // Repository handles auth internally
+        const brandRules = await this.dependencies.repo.getBrandRules()
 
         const result = await generateCaptions(
           {
@@ -255,18 +215,9 @@ export class ToolService {
           throw new Error('Context is required')
         }
 
-        // Verify access
-        const hasAccess = await canAccessCalendar(
-          context.userId,
-          context.calendarId,
-        )
-        if (!hasAccess) {
-          throw new Error('Forbidden: User does not have access to this calendar')
-        }
-
-        // Verify the post belongs to this calendar
+        // Repository handles auth and verifies post belongs to calendar
         const post = await this.dependencies.repo.getPost(input.postId)
-        if (!post || post.calendarId !== context.calendarId) {
+        if (!post) {
           throw new Error('Post not found')
         }
 
@@ -333,16 +284,8 @@ export class ToolService {
           throw new Error('Context is required')
         }
 
-        // Verify access
-        const hasAccess = await canAccessCalendar(
-          context.userId,
-          context.calendarId,
-        )
-        if (!hasAccess) {
-          throw new Error('Forbidden: User does not have access to this calendar')
-        }
-
-        const rules = await this.dependencies.repo.getBrandRules(context.calendarId)
+        // Repository handles auth internally
+        const rules = await this.dependencies.repo.getBrandRules()
         const enabledRules = rules.filter((r) => r.enabled)
         
         if (enabledRules.length === 0) {
@@ -385,18 +328,8 @@ export class ToolService {
           throw new Error('Context is required')
         }
 
-        // Verify access
-        const hasAccess = await canAccessCalendar(
-          context.userId,
-          context.calendarId,
-        )
-        if (!hasAccess) {
-          throw new Error('Forbidden: User does not have access to this calendar')
-        }
-
-        const brandRules = await this.dependencies.repo.getBrandRules(
-          context.calendarId,
-        )
+        // Repository handles auth internally
+        const brandRules = await this.dependencies.repo.getBrandRules()
 
         const score = await getBrandVoiceScore(
           input.caption,
@@ -475,18 +408,9 @@ export class ToolService {
           throw new Error('Context is required')
         }
 
-        // Verify access
-        const hasAccess = await canAccessCalendar(
-          context.userId,
-          context.calendarId,
-        )
-        if (!hasAccess) {
-          throw new Error('Forbidden: User does not have access to this calendar')
-        }
-
-        // Verify the post exists and belongs to this calendar
+        // Repository handles auth and verifies post belongs to calendar
         const post = await this.dependencies.repo.getPost(input.postId)
-        if (!post || post.calendarId !== context.calendarId) {
+        if (!post) {
           throw new Error('Post not found')
         }
 
