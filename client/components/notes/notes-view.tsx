@@ -1,6 +1,5 @@
 import type React from "react"
-import { useState, useEffect, useCallback, useRef } from "react"
-import { useSearchParams } from "react-router-dom"
+import { useState, useEffect, useCallback, useRef, useMemo } from "react"
 import { Plus, Trash2, FileText, Search } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -16,37 +15,36 @@ interface NotesViewProps {
 
 export function NotesView({ calendarId }: NotesViewProps) {
   const { notes, isLoading, createNote, updateNote, deleteNote } = useNotes(calendarId)
-  const [searchParams, setSearchParams] = useSearchParams()
   const { setClientContext } = useAppContext()
   
-  // Get noteId from URL
-  const urlNoteId = searchParams.get("noteId")
-  const [selectedNoteId, setSelectedNoteId] = useState<string | null>(urlNoteId)
+  const [selectedNoteId, setSelectedNoteId] = useState<string | null>(null)
   const [title, setTitle] = useState("")
   const [searchQuery, setSearchQuery] = useState("")
   const [isSaving, setIsSaving] = useState(false)
-  const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const lastSavedContentRef = useRef<string | null>(null)
-  const isInitializingRef = useRef(false)
-
   const [content, setContent] = useState<any>(null)
+  const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  // Sync selectedNoteId with URL on mount and when URL changes externally
+  const filteredNotes = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase()
+    if (!query) return notes
+    return notes.filter((note) => note.title.toLowerCase().includes(query))
+  }, [notes, searchQuery])
+
+  const activeNote = useMemo(() => {
+    if (!selectedNoteId) return null
+    return notes.find((note) => note.id === selectedNoteId) ?? null
+  }, [notes, selectedNoteId])
+
+  // Ensure there's always a valid selection when notes load or change
   useEffect(() => {
-    const urlNoteId = searchParams.get("noteId")
-    if (urlNoteId !== selectedNoteId) {
-      setSelectedNoteId(urlNoteId)
+    if (!notes.length) {
+      setSelectedNoteId(null)
+      return
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchParams])
-
-  // Update URL when note is selected
-  const handleSelectNote = useCallback((noteId: string) => {
-    setSelectedNoteId(noteId)
-    setSearchParams({ noteId }, { replace: true })
-    // Update AI context
-    setClientContext("notes", { noteId })
-  }, [setSearchParams, setClientContext])
+    if (!selectedNoteId || !notes.some((note) => note.id === selectedNoteId)) {
+      setSelectedNoteId(notes[0].id)
+    }
+  }, [notes, selectedNoteId])
 
   // Update AI context when noteId changes
   useEffect(() => {
@@ -57,56 +55,27 @@ export function NotesView({ calendarId }: NotesViewProps) {
     }
   }, [selectedNoteId, setClientContext])
 
-  // Update content when note ID changes (not when note data updates)
+  // Update editable draft when the active note changes
   useEffect(() => {
-    if (!selectedNoteId) {
-      setContent(null)
+    if (!activeNote) {
       setTitle("")
-      lastSavedContentRef.current = null
+      setContent(null)
       return
     }
+    setTitle(activeNote.title)
+    setContent(activeNote.content || null)
+  }, [activeNote])
 
-    const note = notes.find((n: Note) => n.id === selectedNoteId)
-    if (note) {
-      isInitializingRef.current = true
-      const slateContent = note.content || null
-      const contentKey = JSON.stringify(slateContent)
-      
-      // Only update if content actually changed (prevents loop from refetches)
-      if (lastSavedContentRef.current !== contentKey) {
-        setContent(slateContent)
-        setTitle(note.title)
-        lastSavedContentRef.current = contentKey
-      }
-      
-      // Reset initialization flag after a brief delay
-      setTimeout(() => {
-        isInitializingRef.current = false
-      }, 100)
-    }
-  }, [selectedNoteId, notes]) // Depend on selectedNoteId and notes array
-
-  // Auto-save function with debouncing and duplicate prevention
+  // Auto-save function with debouncing
   const debouncedSave = useCallback(
     (slateContent: any) => {
-      if (!selectedNoteId || isInitializingRef.current) return
+      if (!selectedNoteId) return
 
-      const contentKey = JSON.stringify(slateContent)
-      
-      // Don't save if content hasn't changed
-      if (lastSavedContentRef.current === contentKey) {
-        return
-      }
-
-      // Clear existing timeout
       if (saveTimeoutRef.current) {
         clearTimeout(saveTimeoutRef.current)
       }
 
-      // Don't set isSaving here - only when actually saving
-
       saveTimeoutRef.current = setTimeout(async () => {
-        // Set saving state only when actually starting the save
         setIsSaving(true)
         try {
           const currentNote = notes.find((n: Note) => n.id === selectedNoteId)
@@ -115,21 +84,18 @@ export function NotesView({ calendarId }: NotesViewProps) {
             title: title || currentNote?.title || "Untitled Note",
             content: slateContent,
           })
-          // Update ref after successful save
-          lastSavedContentRef.current = contentKey
         } catch (error) {
           console.error("Error auto-saving note:", error)
         } finally {
           setIsSaving(false)
         }
-      }, 1000) // 1 second debounce
+      }, 1000)
     },
     [selectedNoteId, title, notes, updateNote],
   )
 
   // Handle content changes from Slate editor
   const handleContentChange = useCallback((slateContent: any) => {
-    if (isInitializingRef.current) return
     setContent(slateContent)
     debouncedSave(slateContent)
   }, [debouncedSave])
@@ -143,37 +109,43 @@ export function NotesView({ calendarId }: NotesViewProps) {
     }
   }, [])
 
-  // Auto-save title changes (with duplicate prevention)
-  const lastSavedTitleRef = useRef<string | null>(null)
+  // Persist draft title/content when they diverge from the server state
   useEffect(() => {
-    if (!selectedNoteId || !title || isInitializingRef.current) return
-    if (lastSavedTitleRef.current === title) return
+    if (!selectedNoteId || !activeNote) return
+
+    const titleChanged = title !== activeNote.title
+    const contentChanged =
+      JSON.stringify(content ?? null) !== JSON.stringify(activeNote.content ?? null)
+
+    if (!titleChanged && !contentChanged) return
 
     const timeoutId = setTimeout(async () => {
+      setIsSaving(true)
       try {
         await updateNote.mutateAsync({
           id: selectedNoteId,
           title: title || "Untitled Note",
-          content: content || null,
+          content: content ?? null,
         })
-        lastSavedTitleRef.current = title
       } catch (error) {
-        console.error("Error saving title:", error)
+        console.error("Error saving note:", error)
+      } finally {
+        setIsSaving(false)
       }
-    }, 500)
+    }, 600)
 
     return () => clearTimeout(timeoutId)
-  }, [title, selectedNoteId, content, updateNote])
+  }, [title, content, selectedNoteId, activeNote, updateNote])
 
   const handleCreateNote = async () => {
     try {
       const newNote = await createNote.mutateAsync({
         title: "Untitled Note",
-        content: null, // Will default to empty Slate structure on server
+        content: null,
       })
-      handleSelectNote(newNote.id)
+      setSelectedNoteId(newNote.id)
       setTitle(newNote.title)
-      setContent(null)
+      setContent(newNote.content || null)
     } catch (error) {
       console.error("Error creating note:", error)
     }
@@ -187,18 +159,13 @@ export function NotesView({ calendarId }: NotesViewProps) {
         if (selectedNoteId === noteId) {
           setSelectedNoteId(null)
           setTitle("")
-          setSearchParams({}, { replace: true })
-          setClientContext("notes", {})
+          setContent(null)
         }
       } catch (error) {
         console.error("Error deleting note:", error)
       }
     }
   }
-
-  const filteredNotes = notes.filter((note: Note) =>
-    note.title.toLowerCase().includes(searchQuery.toLowerCase()),
-  )
 
   if (isLoading) {
     return <div className="flex h-full items-center justify-center">Loading notes...</div>
@@ -236,7 +203,7 @@ export function NotesView({ calendarId }: NotesViewProps) {
               {filteredNotes.map((note: Note) => (
                 <div
                   key={note.id}
-                  onClick={() => handleSelectNote(note.id)}
+                  onClick={() => setSelectedNoteId(note.id)}
                   className={`
                     group relative mb-1 rounded-lg p-3 cursor-pointer transition-colors
                     ${

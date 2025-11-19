@@ -23,6 +23,7 @@ export function useNotes(calendarId: string) {
       })
     },
     onSuccess: () => {
+      // Just invalidate - let the server return the correct order
       queryClient.invalidateQueries({ queryKey: ["notes", calendarId] })
     },
   })

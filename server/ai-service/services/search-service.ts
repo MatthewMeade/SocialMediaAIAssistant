@@ -15,12 +15,11 @@ const formatHistory = (history: Array<{ role: string; content: string }>): strin
 
 const routeQueryResult = z.object({
     queries: z.array(z.object({
-        datasource: z.enum(["note", "support"]).describe(`
+        datasource: z.enum(["note", /* "support" */]).describe(`
             Given the user's messages, choose which datasource would be most relevant for answering 
             their question. 
             
             note: Search the user's organization's database of notes
-            support: Search this application's knowledgebase
         `),
         queries: z.array(z.string().describe("An individual search query")).describe("A list of queries to search. Each search string will be queried for individually")
     })).describe("A list of datasources and the queries to search those sources for")
@@ -30,9 +29,6 @@ const routeQueryResult = z.object({
 const routeQueryPrompt = new PromptTemplate({
     template: `You are an expert at routing a user question to the appropriate 
       data source. Create queries for the user's note database, our the application's support articles.
-
-      Prefer searching the user's notes unless they are asking for product support for this app
-      
       <Chat History>
         {history}
       </Chat History>
