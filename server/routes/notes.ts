@@ -2,6 +2,9 @@ import { Hono } from "hono"
 import type { User } from "@supabase/supabase-js"
 import { requireAuth, isUser, canAccessCalendar } from "../lib/auth"
 import { supabase } from "../lib/supabase"
+import { DocType, VectorStore } from "server/ai-service/vector-store"
+import { Node } from 'slate'
+import { convertSlateToText } from "server/lib/content-utils"
 
 type Variables = {
   authResult: User
@@ -93,6 +96,17 @@ app.post("/", async (c) => {
     return c.json({ error: error.message }, 500)
   }
 
+  try {
+    const vectorStore = new VectorStore()
+    vectorStore.upsertDocument(DocType.Note, {
+      id: note.id,
+      calendarId,
+      content: convertSlateToText(note.content as Node[])
+    })
+  } catch (e) {
+    console.error("Error upserting note vector db", { e, id: note.id })
+  }
+
   return c.json(mapNoteToResponse(note))
 })
 
@@ -134,6 +148,17 @@ app.put("/:id", async (c) => {
     .select()
     .single()
 
+  try {
+    const vectorStore = new VectorStore()
+    vectorStore.upsertDocument(DocType.Note, {
+      id: note.id,
+      calendarId: note.calendar_id,
+      content: convertSlateToText(note.content as Node[])
+    })
+  } catch (e) {
+    console.error("Error upserting note vector db", { e, id: note.id })
+  }
+
   if (error) {
     console.error("[notes] Error updating note:", error)
     return c.json({ error: error.message }, 500)
@@ -157,6 +182,13 @@ app.delete("/:id", async (c) => {
     .select("calendar_id")
     .eq("id", noteId)
     .single()
+
+      try {
+    const vectorStore = new VectorStore()
+    vectorStore.deleteDocument(DocType.Note, noteId)
+  } catch (e) {
+    console.error("Error deleting note vector db", { e, id: noteId})
+  }
 
   if (fetchError || !existingNote) {
     return c.json({ error: "Note not found" }, 404)

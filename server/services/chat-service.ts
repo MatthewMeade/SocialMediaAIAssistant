@@ -1,4 +1,4 @@
-import { createAgent, dynamicSystemPromptMiddleware, Runtime } from 'langchain'
+import { createAgent, dynamicSystemPromptMiddleware, Runtime, Document } from 'langchain'
 import type { IAiDataRepository } from '../ai-service/repository'
 import type { BaseChatModel } from '@langchain/core/language_models/chat_models'
 import type { DallEAPIWrapper } from '@langchain/openai'
@@ -6,6 +6,9 @@ import type { ToolService } from './tool-service'
 import { toolContextSchema } from './tool-service'
 import { getContextKeys, getToolsForContext } from '../ai-service/tool-manifest'
 import * as z from 'zod'
+import { searchDocuments } from 'server/ai-service/services/search-service'
+import { StoreMetaData } from 'server/ai-service/vector-store'
+import { convertSlateToText } from 'server/lib/content-utils'
 
 /**
  * Dependencies injected into the ChatService.
@@ -435,10 +438,14 @@ export class ChatService {
             repo: this.dependencies.repo,
           })
 
-          console.log({ dynamicContext })
+
+          const vectorSearchResults = (await searchDocuments({ history, input, calendarId: clientContext?.calendarId! }))
+          const documentResults = await this.fetchDocumentContext(vectorSearchResults)
+
+          console.log(dynamicContext + "\n" + documentResults)
 
           // Return the dynamic context string to be appended to the system prompt
-          return dynamicContext
+          return dynamicContext + "\n" + documentResults
         }),
       ],
     })
@@ -487,6 +494,39 @@ export class ChatService {
     }
 
     return extractAgentResponse(response)
+  }
+
+  private fetchDocumentContext = async (documents: Document<StoreMetaData>[]) => {
+    const fetchPromises = documents.map(async doc => {
+      if (doc.metadata.documentType === 'note') {
+        const note = await this.dependencies.repo.getNote(doc.metadata.documentId)
+        return {
+          title: note?.title,
+          content: note?.content ? convertSlateToText(note?.content) : null,
+          type: 'Note'
+        }
+      }
+
+      if (doc.metadata.documentType === 'knowledgebase') {
+
+        // TODO: Get actual content here
+        return {
+          title: "Test Article",
+          content: "This is an example article",
+          type: 'Knowledgebase Article'
+        }
+      }
+    })
+
+    const results = await Promise.all(fetchPromises)
+
+    const contextStr = results.map(r => (`
+        ${r?.type}: ${r?.title}
+        ${r?.content}
+      `)).join('\n')
+
+
+    return `Relevant Documents: \n${contextStr}`
   }
 }
 
