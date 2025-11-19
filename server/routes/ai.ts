@@ -12,10 +12,20 @@ import type {
   CaptionGenerationRequest,
   ApplySuggestionsRequest,
 } from '../ai-service/schemas'
+import { NodeSDK } from "@opentelemetry/sdk-node";
+import { LangfuseSpanProcessor } from "@langfuse/otel";
+
 
 type Variables = {
   authResult: User
 }
+
+
+const sdk = new NodeSDK({
+  spanProcessors: [new LangfuseSpanProcessor()],
+});
+
+sdk.start();
 
 const app = new Hono<{ Variables: Variables }>()
 

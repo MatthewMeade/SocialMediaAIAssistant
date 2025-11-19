@@ -10,6 +10,22 @@ import { searchDocuments } from 'server/ai-service/services/search-service'
 import { StoreMetaData } from 'server/ai-service/vector-store'
 import { convertSlateToText } from 'server/lib/content-utils'
 
+import { NodeSDK } from "@opentelemetry/sdk-node";
+import { LangfuseSpanProcessor } from "@langfuse/otel";
+import { CallbackHandler } from "@langfuse/langchain";
+
+
+const sdk = new NodeSDK({
+  spanProcessors: [new LangfuseSpanProcessor()],
+});
+
+sdk.start();
+
+const langfuseHandler = new CallbackHandler();
+
+
+
+
 /**
  * Dependencies injected into the ChatService.
  */
@@ -128,7 +144,6 @@ async function loadContextualData(config: AgentContextConfig): Promise<string> {
     return '' // No context to inject
   }
 
-  console.log({ clientContext })
 
   // 1. Post context (fetch by ID)
   if (clientContext.postId) {
@@ -252,7 +267,7 @@ async function invokeAgentWithTimeout(
   input: any[],
   config?: { context?: z.infer<typeof toolContextSchema> },
 ) {
-  const invokePromise = agent.invoke({ messages: input }, config)
+  const invokePromise = agent.invoke({ messages: input }, { ...config, callbacks: [langfuseHandler] })
 
   return Promise.race([
     invokePromise,
@@ -442,7 +457,6 @@ export class ChatService {
           const vectorSearchResults = (await searchDocuments({ history, input, calendarId: clientContext?.calendarId! }))
           const documentResults = await this.fetchDocumentContext(vectorSearchResults)
 
-          console.log(dynamicContext + "\n" + documentResults)
 
           // Return the dynamic context string to be appended to the system prompt
           return dynamicContext + "\n" + documentResults
