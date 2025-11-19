@@ -8,6 +8,7 @@ import type {
   ExtractedBrandRules,
 } from '../schemas'
 import { ExtractedBrandRulesSchema } from '../schemas'
+import { langfuseHandler } from '../../../server/lib/langfuse'
 
 // Helper function to extract text from message content
 function extractTextFromMessage(message: any): string {
@@ -118,7 +119,7 @@ export async function generateCaptions(
     const result = await generationChain.invoke({
       topic: request.topic,
       rules: rulesForPrompt,
-    })
+    }, { callbacks: [langfuseHandler] })
     initialCaption = extractTextFromMessage(result)
   }
 
@@ -143,7 +144,7 @@ export async function generateCaptions(
       rules: rulesForRefinement,
       failedCaption: initialCaption,
       feedback,
-    })
+    }, { callbacks: [langfuseHandler] })
     const refinedCaption = extractTextFromMessage(result)
 
     // 4. Evaluate Refined Caption
@@ -180,7 +181,7 @@ export async function applySuggestions(
   const result = await chain.invoke({
     caption: caption || '(No caption provided)',
     suggestions: suggestionsString,
-  })
+  }, { callbacks: [langfuseHandler] })
 
   return extractTextFromMessage(result)
 }
@@ -217,6 +218,6 @@ export async function extractBrandRules(
     }),
   )
 
-  return await chain.invoke({ text })
+  return await chain.invoke({ text }, { callbacks: [langfuseHandler] })
 }
 

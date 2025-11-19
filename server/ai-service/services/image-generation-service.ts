@@ -7,6 +7,7 @@ import { supabase } from '../../lib/supabase'
 import { saveMedia } from '../../lib/db/media'
 
 import type { MediaItem } from '../../../shared/types'
+import { langfuseHandler } from '../../../server/lib/langfuse'
 
 /**
  * Generates an image, downloads it, and uploads it to Supabase storage.
@@ -26,7 +27,7 @@ export async function generateAndStoreImage(
     )}..."`,
   )
 
-  const tempImageUrl = await imageGenerator.invoke(prompt)
+  const tempImageUrl = await imageGenerator.invoke(prompt, { callbacks: [langfuseHandler] })
 
   if (!tempImageUrl) {
     throw new Error('Image generation failed (no URL returned).')

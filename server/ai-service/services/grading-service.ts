@@ -2,6 +2,7 @@ import { BaseChatModel } from '@langchain/core/language_models/chat_models'
 import { PromptTemplate } from '@langchain/core/prompts'
 import type { BrandRule } from '../../../shared/types'
 import { BrandScoreSchema, type BrandScore } from '../schemas'
+import { langfuseHandler } from '../../../server/lib/langfuse'
 
 const graderPromptTemplate = new PromptTemplate({
   template: `You are an expert brand voice analyst. Your task is to grade a post caption against a set of brand voice rules.
@@ -52,5 +53,5 @@ export async function getBrandVoiceScore(
   return await chain.invoke({
     rules: rulesString,
     caption: caption || '(No caption provided)',
-  })
+  }, { callbacks: [langfuseHandler] })
 }

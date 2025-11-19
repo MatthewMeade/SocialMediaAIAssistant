@@ -3,6 +3,7 @@ import z from "zod";
 import { chatModel } from "../models";
 import { DocType, StoreMetaData, VectorStore } from "../vector-store";
 import { Document } from "langchain";
+import { langfuseHandler } from "../../../server/lib/langfuse";
 
 
 // Helper to format history
@@ -65,5 +66,5 @@ export const searchDocuments = async (params: {
             const uniqueResultsMap = results.flat().reduce((acc, cur) => ({...acc, [cur.metadata.documentType + cur.metadata.documentId] : cur}), {} as Record<string, Document<StoreMetaData>>)
             return Object.values(uniqueResultsMap);
         })
-        .invoke({ history: formatHistory(params.history), input: params.input })
+        .invoke({ history: formatHistory(params.history), input: params.input }, { callbacks: [langfuseHandler] })
 }

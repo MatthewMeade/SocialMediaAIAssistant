@@ -10,18 +10,7 @@ import { searchDocuments } from 'server/ai-service/services/search-service'
 import { StoreMetaData } from 'server/ai-service/vector-store'
 import { convertSlateToText } from 'server/lib/content-utils'
 
-import { NodeSDK } from "@opentelemetry/sdk-node";
-import { LangfuseSpanProcessor } from "@langfuse/otel";
-import { CallbackHandler } from "@langfuse/langchain";
-
-
-const sdk = new NodeSDK({
-  spanProcessors: [new LangfuseSpanProcessor()],
-});
-
-sdk.start();
-
-const langfuseHandler = new CallbackHandler();
+import { langfuseHandler } from '../lib/langfuse'
 
 
 
