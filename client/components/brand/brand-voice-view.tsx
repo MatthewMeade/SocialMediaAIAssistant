@@ -4,7 +4,7 @@ import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
-import { Plus, Trash2, Sparkles, RefreshCw } from "lucide-react"
+import { Plus, Trash2, Sparkles, RefreshCw, Upload } from "lucide-react"
 import type { BrandRule, CaptionGenerationResult } from "@/lib/types"
 import { Card } from "@/components/ui/card"
 import { useBrandRules } from "@/lib/hooks/use-brand-rules"
@@ -12,18 +12,29 @@ import { useMutation } from "@tanstack/react-query"
 import { apiPost } from "@/lib/api-client"
 import { ApiRoutes } from "@/lib/api-routes"
 import { Spinner } from "@/components/ui/spinner"
+import { ImportRulesDialog } from "./import-rules-dialog"
 
 interface BrandVoiceViewProps {
   calendarId: string
 }
 
 export function BrandVoiceView({ calendarId }: BrandVoiceViewProps) {
-  const { brandRules, isLoading, createBrandRule, updateBrandRule, deleteBrandRule } = useBrandRules(calendarId)
+  const {
+    brandRules,
+    isLoading,
+    createBrandRule,
+    updateBrandRule,
+    deleteBrandRule,
+    extractRules,
+    createBrandRulesBulk,
+  } = useBrandRules(calendarId)
   const [editingRule, setEditingRule] = useState<string | null>(null)
   const [newRule, setNewRule] = useState({ title: "", description: "" })
   const [showNewRuleForm, setShowNewRuleForm] = useState(false)
   const [generatedCaption, setGeneratedCaption] = useState<string | null>(null)
   const [isGeneratingCaption, setIsGeneratingCaption] = useState(false)
+  const [showImportDialog, setShowImportDialog] = useState(false)
+  const [isImporting, setIsImporting] = useState(false)
   const abortControllerRef = useRef<AbortController | null>(null)
 
   const handleToggleRule = async (ruleId: string) => {
@@ -59,6 +70,24 @@ export function BrandVoiceView({ calendarId }: BrandVoiceViewProps) {
     const updatedRule = { ...rule, ...updates }
     await updateBrandRule.mutateAsync(updatedRule)
     setEditingRule(null)
+  }
+
+  const handleImportRules = async (text: string) => {
+    setIsImporting(true)
+    try {
+      // 1. Extract rules via AI
+      const result = await extractRules.mutateAsync(text)
+
+      if (result.rules && result.rules.length > 0) {
+        // 2. Save to DB
+        await createBrandRulesBulk.mutateAsync(result.rules)
+        setShowImportDialog(false)
+      }
+    } catch (error) {
+      console.error("Failed to import rules", error)
+    } finally {
+      setIsImporting(false)
+    }
   }
 
   // Mutation for generating captions
@@ -201,10 +230,21 @@ What feature would you love to see next? Drop your ideas below! 👇
               <h1 className="text-2xl font-bold text-foreground">Brand Voice</h1>
               <p className="text-sm text-muted-foreground mt-1">Define rules that guide your team's content creation</p>
             </div>
-            <Button onClick={() => setShowNewRuleForm(true)} size="sm" className="gap-2">
-              <Plus className="h-4 w-4" />
-              Add Rule
-            </Button>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-2"
+                onClick={() => setShowImportDialog(true)}
+              >
+                <Upload className="h-4 w-4" />
+                Import from Doc
+              </Button>
+              <Button onClick={() => setShowNewRuleForm(true)} size="sm" className="gap-2">
+                <Plus className="h-4 w-4" />
+                Add Rule
+              </Button>
+            </div>
           </div>
 
           {showNewRuleForm && (
@@ -364,6 +404,13 @@ What feature would you love to see next? Drop your ideas below! 👇
           </div>
         </div>
       </div>
+
+      <ImportRulesDialog
+        isOpen={showImportDialog}
+        onClose={() => setShowImportDialog(false)}
+        onImport={handleImportRules}
+        isProcessing={isImporting}
+      />
     </div>
   )
 }

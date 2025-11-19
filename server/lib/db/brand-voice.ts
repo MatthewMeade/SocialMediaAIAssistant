@@ -62,3 +62,31 @@ export async function deleteBrandRule(ruleId: string): Promise<boolean> {
 
   return true
 }
+
+export async function saveBrandRulesBulk(rules: BrandRule[]): Promise<BrandRule[]> {
+  const { data, error } = await supabase
+    .from("brand_rules")
+    .insert(
+      rules.map(r => ({
+        id: r.id,
+        calendar_id: r.calendarId,
+        title: r.title,
+        description: r.description,
+        enabled: r.enabled,
+      }))
+    )
+    .select()
+
+  if (error) {
+    console.error("Error bulk saving brand rules:", error)
+    return []
+  }
+
+  return (data || []).map((rule: any) => ({
+    id: rule.id,
+    calendarId: rule.calendar_id,
+    title: rule.title,
+    description: rule.description,
+    enabled: rule.enabled,
+  }))
+}

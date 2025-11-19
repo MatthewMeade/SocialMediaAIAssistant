@@ -50,3 +50,14 @@ export const ApplySuggestionsRequestSchema = z.object({
 export type ApplySuggestionsRequest = z.infer<
   typeof ApplySuggestionsRequestSchema
 >
+
+// Schema for extracted brand rules from a document
+export const ExtractedBrandRulesSchema = z.object({
+  rules: z.array(
+    z.object({
+      title: z.string().describe("A concise title for the brand rule (e.g., 'Use Emojis Sparingly')"),
+      description: z.string().describe("A detailed explanation of the rule and how to apply it."),
+    })
+  ).describe("A list of brand guidelines extracted from the text."),
+})
+export type ExtractedBrandRules = z.infer<typeof ExtractedBrandRulesSchema>

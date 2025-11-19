@@ -8,6 +8,7 @@ export const ApiRoutes = {
     GENERATE_CAPTION: "/api/ai/generate-caption",
     APPLY_SUGGESTIONS: "/api/ai/apply-suggestions",
     GRADE_CAPTION: "/api/ai/grade-caption",
+    EXTRACT_BRAND_RULES: "/api/ai/extract-brand-rules",
   },
   POSTS: "/api/posts",
   CALENDARS: "/api/calendars",

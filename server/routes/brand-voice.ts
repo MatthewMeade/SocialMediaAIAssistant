@@ -2,7 +2,7 @@ import { Hono } from "hono"
 import type { User } from "@supabase/supabase-js"
 import { requireAuth, isUser, canAccessCalendar } from "../lib/auth"
 import { supabase } from "../lib/supabase"
-import { getBrandRules, saveBrandRule, deleteBrandRule } from "../lib/db/brand-voice"
+import { getBrandRules, saveBrandRule, deleteBrandRule, saveBrandRulesBulk } from "../lib/db/brand-voice"
 
 type Variables = {
   authResult: User
@@ -139,6 +139,37 @@ app.delete("/", async (c) => {
   }
 
   return c.json({ success: true })
+})
+
+app.post("/bulk", async (c) => {
+  const authResult = c.get('authResult')
+  if (!isUser(authResult)) {
+    return c.json({ error: 'Unauthorized' }, 401)
+  }
+  const user = authResult
+
+  const body = await c.req.json()
+  const { calendarId, rules } = body
+
+  if (!calendarId || !Array.isArray(rules)) {
+    return c.json({ error: "Calendar ID and rules array are required" }, 400)
+  }
+
+  const hasAccess = await canAccessCalendar(user.id, calendarId)
+  if (!hasAccess) {
+    return c.json({ error: "Forbidden" }, 403)
+  }
+
+  const rulesToSave = rules.map((r: any) => ({
+    id: crypto.randomUUID(),
+    calendarId,
+    title: r.title,
+    description: r.description,
+    enabled: true,
+  }))
+
+  const savedRules = await saveBrandRulesBulk(rulesToSave)
+  return c.json(savedRules)
 })
 
 export default app

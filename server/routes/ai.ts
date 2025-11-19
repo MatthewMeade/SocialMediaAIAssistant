@@ -7,7 +7,7 @@ import { ChatService } from '../services/chat-service'
 import { chatModel, creativeModel, imageGenerator } from '../ai-service/models'
 import { generateAndStoreImage } from '../ai-service/services/image-generation-service'
 import { getBrandVoiceScore } from '../ai-service/services/grading-service'
-import { generateCaptions } from '../ai-service/services/generation-service'
+import { generateCaptions, extractBrandRules } from '../ai-service/services/generation-service'
 import type {
   CaptionGenerationRequest,
   ApplySuggestionsRequest,
@@ -203,6 +203,33 @@ app.post('/generate-image', async (c) => {
     }
     return c.json(
       { error: 'Failed to generate image', details: error.message },
+      500,
+    )
+  }
+})
+
+/**
+ * Endpoint to extract brand rules from text
+ */
+app.post('/extract-brand-rules', async (c) => {
+  const authResult = c.get('authResult')
+  if (!isUser(authResult)) {
+    return c.json({ error: 'Unauthorized' }, 401)
+  }
+
+  const { text } = await c.req.json()
+
+  if (!text || typeof text !== 'string') {
+    return c.json({ error: 'Text content is required' }, 400)
+  }
+
+  try {
+    const result = await extractBrandRules(text, chatModel)
+    return c.json(result)
+  } catch (error: any) {
+    console.error('[AI_ROUTE] Error extracting rules:', error)
+    return c.json(
+      { error: 'Failed to extract rules', details: error.message },
       500,
     )
   }

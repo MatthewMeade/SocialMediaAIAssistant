@@ -5,7 +5,9 @@ import type {
   BrandScore,
   CaptionGenerationRequest,
     CaptionGenerationResult,
+  ExtractedBrandRules,
 } from '../schemas'
+import { ExtractedBrandRulesSchema } from '../schemas'
 
 // Helper function to extract text from message content
 function extractTextFromMessage(message: any): string {
@@ -181,5 +183,40 @@ export async function applySuggestions(
   })
 
   return extractTextFromMessage(result)
+}
+
+// Prompt template for extracting brand rules from text
+const extractionPromptTemplate = new PromptTemplate({
+  template: `You are an expert brand strategist. Your task is to analyze the provided brand guidelines document and extract a structured list of actionable brand voice rules.
+
+  The rules will be used to grade social media content before publishing, Ignore any rules that cannot be validated by reading the post content. 
+
+**Input Text:**
+
+{text}
+
+Extract distinct, actionable rules. Each rule must have a clear title and a description explaining how to apply it. Ignore administrative text or filler.
+
+
+
+`,
+  inputVariables: ["text"],
+})
+
+/**
+ * Extracts brand rules from a text document using structured output.
+ * This function is "pure" and does not handle auth or data fetching.
+ */
+export async function extractBrandRules(
+  text: string,
+  chatModel: BaseChatModel,
+): Promise<ExtractedBrandRules> {
+  const chain = extractionPromptTemplate.pipe(
+    chatModel.withStructuredOutput(ExtractedBrandRulesSchema, {
+      name: "brand_rules_extractor",
+    }),
+  )
+
+  return await chain.invoke({ text })
 }
 

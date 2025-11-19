@@ -87,6 +87,27 @@ export function useBrandRules(calendarId: string) {
     },
   })
 
+  const extractRulesMutation = useMutation({
+    mutationFn: async (text: string) => {
+      return apiPost<{ rules: Array<{ title: string; description: string }> }>(
+        ApiRoutes.AI.EXTRACT_BRAND_RULES,
+        { text }
+      )
+    },
+  })
+
+  const createBulkMutation = useMutation({
+    mutationFn: async (rules: Array<{ title: string; description: string }>) => {
+      return apiPost<BrandRule[]>(`${ApiRoutes.BRAND_VOICE}/bulk`, {
+        calendarId,
+        rules,
+      })
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["brandRules", calendarId] })
+    },
+  })
+
   return {
     brandRules: query.data ?? [],
     isLoading: query.isLoading,
@@ -94,5 +115,7 @@ export function useBrandRules(calendarId: string) {
     createBrandRule: createMutation,
     updateBrandRule: updateMutation,
     deleteBrandRule: deleteMutation,
+    extractRules: extractRulesMutation,
+    createBrandRulesBulk: createBulkMutation,
   }
 }
