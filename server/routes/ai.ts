@@ -238,16 +238,16 @@ app.post('/chat', async (c) => {
   }
   const user = authResult
 
-  const { input, history, calendarId, threadId, clientContext } = await c.req.json()
+  const { input, calendarId, threadId, clientContext } = await c.req.json()
 
   // Validate required fields
   if (!calendarId) {
     return c.json({ error: 'calendarId is required' }, 400)
   }
 
-  // Input can be empty when sending tool results (ToolMessage in history)
-  // But we still require the field to be present
-  if (input === undefined || input === null) {
+  // Input is required - the frontend should send "The tool action has been completed"
+  // when continuing after a tool execution, rather than sending empty input
+  if (input === undefined || input === null || input === '') {
     return c.json({ error: 'input is required' }, 400)
   }
 
@@ -278,13 +278,14 @@ app.post('/chat', async (c) => {
     // Run the chat with clientContext to determine which tools are available
     // Pass tool context (userId, calendarId) via runtime
     // Ensure calendarId is in clientContext for brand rules loading
+    // MemorySaver handles conversation history via threadId - no need to pass history
     const enrichedClientContext = {
       ...clientContext,
       calendarId: clientContext?.calendarId || calendarId,
     }
     const result = await chatService.runChat(
-      input || '',
-      history || [],
+      input,
+      threadId || undefined,
       enrichedClientContext,
       { userId: user.id, calendarId },
     )

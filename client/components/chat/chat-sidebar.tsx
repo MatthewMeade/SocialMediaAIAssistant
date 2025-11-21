@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from "react"
 import type React from "react"
 import { useNavigate, useParams } from "react-router-dom"
-import { X, Send, Sparkles, Check, Calendar, FileText, Plus } from "lucide-react"
+import { X, Send, Sparkles, Check, Calendar, FileText, Plus, RotateCcw } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
@@ -384,9 +384,16 @@ export function ChatSidebar({ isOpen, onClose }: ChatSidebarProps) {
     return checkFn(contextRef.current)
   }, [])
 
-  // Initialize threadId with a stable value that doesn't depend on context
-  // We'll update it when context is available
-  const [threadId, setThreadId] = useState<string>(() => `default-${Date.now()}`)
+  // Generate a new threadId when calendarId is available
+  // Chats are ephemeral - threadId is only used for the current session
+  const generateThreadId = (calendarId: string | null | undefined): string => {
+    if (calendarId) {
+      return `${calendarId}-${Date.now()}`
+    }
+    return `default-${Date.now()}`
+  }
+
+  const [threadId, setThreadId] = useState<string>(() => generateThreadId(clientContext.calendarId ?? undefined))
 
   const [messages, setMessages] = useState<Message[]>([
     {
@@ -397,11 +404,24 @@ export function ChatSidebar({ isOpen, onClose }: ChatSidebarProps) {
   const [input, setInput] = useState("")
   const [isLoading, setIsLoading] = useState(false)
 
-  // Update threadId when calendarId becomes available
+  // Generate a new threadId when calendarId changes
   useEffect(() => {
     if (clientContext.calendarId) {
-      setThreadId(`${clientContext.calendarId}-${Date.now()}`)
+      setThreadId(generateThreadId(clientContext.calendarId))
     }
+  }, [clientContext.calendarId])
+
+  // Function to start a new chat session
+  const startNewChat = useCallback(() => {
+    setMessages([
+      {
+        role: "assistant",
+        content: "Hello! I'm your AI assistant. How can I help you with your social media content today?",
+      },
+    ])
+    setThreadId(generateThreadId(clientContext.calendarId ?? undefined))
+    setExecutedToolCalls(new Set())
+    setInput("")
   }, [clientContext.calendarId])
   const [executedToolCalls, setExecutedToolCalls] = useState<Set<string>>(new Set())
   const messagesEndRef = useRef<HTMLDivElement>(null)
@@ -422,68 +442,12 @@ export function ChatSidebar({ isOpen, onClose }: ChatSidebarProps) {
   }, [isOpen])
 
   /**
-   * Converts frontend messages to API format.
-   * Uses LangChain's format directly ("user" | "assistant" | "tool") to avoid unnecessary conversions.
-   * Only converts camelCase toolCalls to snake_case tool_calls for API compatibility.
-   */
-  function buildMessageHistory(messages: Message[]): Array<{
-    role: "user" | "assistant" | "tool"
-    content: string
-    tool_calls?: Array<{ id: string; name: string; args: any }>
-    tool_call_id?: string
-    name?: string
-  }> {
-    return messages.map((msg) => {
-      // Handle ToolMessages
-      if (msg.role === "tool") {
-        return {
-          role: "tool" as const,
-          content: msg.content,
-          tool_call_id: msg.tool_call_id!,
-          ...(msg.name && { name: msg.name }),
-        }
-      }
-
-      // Handle User and Assistant messages
-      const apiMsg: {
-        role: "user" | "assistant" | "tool"
-        content: string
-        tool_calls?: Array<{ id: string; name: string; args: any }>
-        tool_call_id?: string
-        name?: string
-      } = {
-        role: msg.role,
-        content: msg.content || "",
-      }
-
-      // Convert camelCase toolCalls to snake_case tool_calls for API
-      if (msg.toolCalls && msg.toolCalls.length > 0) {
-        apiMsg.tool_calls = msg.toolCalls.map((tc) => ({
-          id: tc.id,
-          name: tc.name,
-          args: tc.args,
-        }))
-      }
-
-      return apiMsg
-    })
-  }
-
-  /**
    * Sends a tool execution result back to the agent.
    * With returnDirect: true, the tool result goes directly to the user, but we still need
-   * to send a ToolMessage so the agent knows the tool completed and can continue.
+   * to send a message so the agent knows the tool completed and can continue.
+   * The memory store handles conversation history, so we just send the continuation message.
    */
-  const sendToolResult = useCallback(async (toolCallId: string, toolName: string, result: string) => {
-    const history = buildMessageHistory(messages)
-
-    const toolMessage = {
-      role: "tool" as const,
-      content: result,
-      tool_call_id: toolCallId,
-      name: toolName,
-    }
-
+  const sendToolResult = useCallback(async (_toolCallId: string, _toolName: string, _result: string) => {
     // Build the clientContext object from the AppContext
     // Use contextRef to get the latest context value (updated by useEffect)
     const currentContext = contextRef.current
@@ -494,12 +458,13 @@ export function ChatSidebar({ isOpen, onClose }: ChatSidebarProps) {
       pageState: currentContext.pageState || undefined,
     }
 
+    // Send a continuation message - the backend's memory store will handle
+    // loading the conversation history and processing the tool result
     const response = await apiFetch(ApiRoutes.AI.CHAT, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        input: "",
-        history: [...history, toolMessage],
+        input: "The tool action has been completed. Please continue with the next step.",
         calendarId: contextRef.current.calendarId || '',
         threadId,
         clientContext: backendClientContext,
@@ -512,23 +477,23 @@ export function ChatSidebar({ isOpen, onClose }: ChatSidebarProps) {
 
     const data = await response.json()
 
-    // Add the ToolMessage to state so it's included in future history
+    // Update threadId from response if provided (backend may have generated one)
+    if (data.threadId && data.threadId !== threadId) {
+      setThreadId(data.threadId)
+    }
+
+    // Add the agent's continuation response
+    // Note: We don't add the ToolMessage to UI state since the memory store
+    // handles it internally and we filter out tool messages from display anyway
     setMessages((prev) => [
       ...prev,
-      {
-        role: "tool",
-        content: result,
-        tool_call_id: toolCallId,
-        name: toolName,
-      },
-      // Add the agent's continuation response (after processing the ToolMessage)
       {
         role: "assistant",
         content: data.response || "",
         toolCalls: data.toolCalls,
       },
     ])
-  }, [messages, threadId])
+  }, [threadId])
 
   /**
    * Executes a client-side tool action by dispatching events via the event bus.
@@ -678,20 +643,9 @@ export function ChatSidebar({ isOpen, onClose }: ChatSidebarProps) {
     setIsLoading(true)
 
     try {
-      // Convert previous messages to API format (exclude the current message)
-      // The current message is sent as "input" instead of being in history
-      let history = buildMessageHistory(newMessages.slice(0, -1))
-      
-      // Add cancellation ToolMessages for any pending tool calls
+      // Mark pending tool calls as cancelled (they'll be ignored by the memory store)
+      // The memory store handles conversation history, so we don't need to send it
       if (pendingToolCalls.length > 0) {
-        const cancellationMessages = pendingToolCalls.map((tc) => ({
-          role: "tool" as const,
-          content: "Tool call cancelled by user",
-          tool_call_id: tc.id,
-          name: tc.name,
-        }))
-        history = [...history, ...cancellationMessages]
-        // Mark these tool calls as executed so they don't show as pending
         setExecutedToolCalls((prev) => {
           const newSet = new Set(prev)
           pendingToolCalls.forEach((tc) => newSet.add(tc.id))
@@ -709,15 +663,15 @@ export function ChatSidebar({ isOpen, onClose }: ChatSidebarProps) {
         pageState: clientContext.pageState || undefined,
       }
 
+      // Send only the current user message - the memory store handles conversation history
       const response = await apiFetch(ApiRoutes.AI.CHAT, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           input: userMessage.content,
-          history,
-          calendarId: clientContext.calendarId || '', // 2. Send the calendarId from context
+          calendarId: clientContext.calendarId || '',
           threadId,
-          clientContext: backendClientContext, // 3. Send the full context object
+          clientContext: backendClientContext,
         }),
       })
 
@@ -727,6 +681,11 @@ export function ChatSidebar({ isOpen, onClose }: ChatSidebarProps) {
 
       const data = await response.json()
       
+      // Update threadId from response if provided (backend may have generated one)
+      if (data.threadId && data.threadId !== threadId) {
+        setThreadId(data.threadId)
+      }
+
       // Add agent's response (may include tool calls for client-side execution)
       // Include the response content even when tool calls are present, so the AI can provide context
       setMessages((prev) => [
@@ -772,10 +731,22 @@ export function ChatSidebar({ isOpen, onClose }: ChatSidebarProps) {
           <Sparkles className="h-5 w-5 text-primary" />
           <h2 className="text-lg font-semibold text-foreground">AI Assistant</h2>
         </div>
-        <Button variant="ghost" size="icon-sm" onClick={onClose}>
-          <X className="h-4 w-4" />
-          <span className="sr-only">Close chat</span>
-        </Button>
+        <div className="flex items-center gap-1">
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            onClick={startNewChat}
+            title="Start new chat"
+            disabled={isLoading}
+          >
+            <RotateCcw className="h-4 w-4" />
+            <span className="sr-only">Start new chat</span>
+          </Button>
+          <Button variant="ghost" size="icon-sm" onClick={onClose}>
+            <X className="h-4 w-4" />
+            <span className="sr-only">Close chat</span>
+          </Button>
+        </div>
       </div>
 
       {/* Messages */}

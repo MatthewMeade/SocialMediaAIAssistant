@@ -2,15 +2,15 @@ import { PromptTemplate } from "@langchain/core/prompts";
 import z from "zod";
 import { chatModel } from "../models";
 import { DocType, StoreMetaData, VectorStore } from "../vector-store";
-import { Document } from "langchain";
+import { BaseMessage, Document } from "langchain";
 import { langfuseHandler } from "../../../server/lib/langfuse";
 
 
 // Helper to format history
-const formatHistory = (history: Array<{ role: string; content: string }>): string => {
+const formatHistory = (history: BaseMessage[]): string => {
     return history
         .slice(-4) // Use last 4 messages for context
-        .map(msg => `${msg.role}: ${msg.content}`)
+        .map(msg => `${msg.name}: ${msg.content}`)
         .join("\n");
 };
 
@@ -45,7 +45,7 @@ const routeQueryPrompt = new PromptTemplate({
 
 
 export const searchDocuments = async (params: {
-    history: Array<{ role: string, content: string }>,
+    history: BaseMessage[],
     input: string,
     calendarId: string
 }): Promise<Document<StoreMetaData>[]> => {

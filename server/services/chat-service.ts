@@ -9,8 +9,13 @@ import * as z from 'zod'
 import { searchDocuments } from 'server/ai-service/services/search-service'
 import { StoreMetaData } from 'server/ai-service/vector-store'
 import { convertSlateToText } from 'server/lib/content-utils'
+import { MemorySaver } from "@langchain/langgraph";
+import { v4 as uuidv4 } from 'uuid';
+import { propagateAttributes } from '@langfuse/tracing'
 
 import { langfuseHandler } from '../lib/langfuse'
+
+
 
 
 
@@ -214,49 +219,35 @@ async function loadContextualData(config: AgentContextConfig): Promise<string> {
 }
 
 /**
- * Converts API message history to LangChain message format.
- */
-function convertHistoryToLangChainMessages(
-  history: Array<{
-    role: string
-    content: string
-    tool_calls?: any[]
-    tool_call_id?: string
-    name?: string
-  }>,
-) {
-  return history.map((msg) => {
-    if (msg.role === 'user') {
-      return { role: 'user' as const, content: msg.content }
-    }
-    if (msg.role === 'tool') {
-      return {
-        role: 'tool' as const,
-        content: msg.content,
-        tool_call_id: msg.tool_call_id!,
-        ...(msg.name && { name: msg.name }),
-      }
-    }
-    // Assistant
-    // Ensure content is always a string (not empty, as empty strings can cause format issues)
-    const assistantContent = msg.content && msg.content.trim() ? msg.content : (msg.tool_calls ? '' : ' ')
-    return {
-      role: 'assistant' as const,
-      content: assistantContent,
-      ...(msg.tool_calls && { tool_calls: msg.tool_calls }),
-    }
-  })
-}
-
-/**
  * Invokes the agent with a timeout to prevent hanging requests.
+ * The threadId must be passed in config.configurable.thread_id for the checkpointer to work.
+ * Uses propagateAttributes to set sessionId (from threadId) and userId for Langfuse tracking.
  */
 async function invokeAgentWithTimeout(
   agent: ReturnType<typeof createAgent>,
   input: any[],
+  threadId: string,
+  userId: string,
   config?: { context?: z.infer<typeof toolContextSchema> },
 ) {
-  const invokePromise = agent.invoke({ messages: input }, { ...config, callbacks: [langfuseHandler] })
+  // Use propagateAttributes to set sessionId and userId for Langfuse tracking
+  // This ensures all observations (including tool calls) are tracked in the same session
+  const invokePromise = propagateAttributes(
+    {
+      sessionId: threadId, // Use threadId as sessionId - all messages in a thread are one session
+      userId: userId,     // Track which user this conversation belongs to
+    },
+    async () => {
+      return await agent.invoke(
+        { messages: input },
+        {
+          configurable: { thread_id: threadId },
+          ...config,
+          callbacks: [langfuseHandler],
+        }
+      )
+    }
+  )
 
   return Promise.race([
     invokePromise,
@@ -372,31 +363,30 @@ function extractMessageContent(message: any): string {
   return ''
 }
 
+const memoryStore = new MemorySaver()
+
 /**
  * The ChatService is the single entry point for the /api/ai/chat route.
  * It manages the full lifecycle of an agent request.
  */
 export class ChatService {
   private dependencies: ChatServiceDependencies
+  private memoryStore: MemorySaver
 
   constructor(dependencies: ChatServiceDependencies) {
     this.dependencies = dependencies
+    this.memoryStore = memoryStore
   }
 
   /**
-   * Runs the chat agent with the provided input and history.
+   * Runs the chat agent with the provided input.
+   * Uses MemorySaver to maintain conversation history via threadId.
    * Determines which tools are needed based on clientContext, gets those tools
    * from the ToolService, and runs the agent.
    */
   async runChat(
     input: string,
-    history: Array<{
-      role: string
-      content: string
-      tool_calls?: any[]
-      tool_call_id?: string
-      name?: string
-    }>,
+    threadId?: string,
     clientContext?: {
       page?: string
       component?: string
@@ -412,7 +402,7 @@ export class ChatService {
       }
     },
     toolContext?: z.infer<typeof toolContextSchema>,
-  ): Promise<{ response: string; toolCalls?: any[] }> {
+  ): Promise<{ response: string; toolCalls?: any[], threadId: string }> {
     // 1. Get tools (same as before)
     const contextKeys = getContextKeys(clientContext)
     const tools = getToolsForContext(contextKeys, this.dependencies.toolService)
@@ -431,9 +421,11 @@ export class ChatService {
       systemPrompt: systemPrompt, // <-- Use the STATIC prompt
       contextSchema: toolContextSchema, // <-- Pass the tool context schema
 
+      checkpointer: this.memoryStore, // Use the persistent memory store
+
       // 3. Add the middleware
       middleware: [
-        dynamicSystemPromptMiddleware(async (_state, _config: Runtime<z.infer<typeof toolContextSchema>>) => {
+        dynamicSystemPromptMiddleware(async (state, _config: Runtime<z.infer<typeof toolContextSchema>>) => {
           // Run your ID-based retrieval logic
           // We need to pass repo and clientContext separately since they're not in the tool context
           const dynamicContext = await loadContextualData({
@@ -443,7 +435,7 @@ export class ChatService {
           })
 
 
-          const vectorSearchResults = (await searchDocuments({ history, input, calendarId: clientContext?.calendarId! }))
+          const vectorSearchResults = (await searchDocuments({ history: state.messages, input, calendarId: clientContext?.calendarId! }))
           const documentResults = await this.fetchDocumentContext(vectorSearchResults)
 
 
@@ -453,50 +445,37 @@ export class ChatService {
       ],
     })
 
-    // 4. Convert history
-    const messages = convertHistoryToLangChainMessages(history)
-
-    // 5. Invoke the agent
-    // We pass the full message list in the input
-    // We pass our tool context (userId, calendarId) via the context parameter
+    // 3. Validate tool context
     if (!toolContext) {
       throw new Error('Tool context (userId, calendarId) is required')
     }
 
+    // 4. Generate or use provided threadId
+    // The MemorySaver uses threadId to maintain conversation history
+    const thread = threadId ?? uuidv4()
+
+    // 5. Invoke the agent with just the current user message
+    // The MemorySaver automatically loads previous messages from the thread
+    // Pass userId to enable Langfuse user tracking
     const response = await invokeAgentWithTimeout(
       agent,
-      [...messages, { role: 'user' as const, content: input || '' }],
+      [{ role: 'user' as const, content: input || '' }],
+      thread,
+      toolContext.userId,
       {
         context: toolContext,
       },
     )
 
-    // 6. Handle response (same as your existing logic)
-    const lastMessage = messages[messages.length - 1]
-    const hasToolMessage = lastMessage && lastMessage.role === 'tool'
-    const responseMessageCount = response.messages?.length || 0
-    const inputMessageCount = messages.length
+    // 6. Extract and return the response
+    // No special continuation logic needed - the frontend handles sending
+    // "The tool action has been completed" messages when tools finish
+    const agentResponse = extractAgentResponse(response)
 
-    if (hasToolMessage && responseMessageCount <= inputMessageCount) {
-      const continuationMessages = [
-        ...messages,
-        {
-          role: 'user' as const,
-          content:
-            'The tool action has been completed. Please continue with the next step.',
-        },
-      ]
-      const continuationResponse = await invokeAgentWithTimeout(
-        agent,
-        continuationMessages,
-        {
-          context: toolContext,
-        },
-      )
-      return extractAgentResponse(continuationResponse)
+    return {
+      ...agentResponse,
+      threadId: thread
     }
-
-    return extractAgentResponse(response)
   }
 
   private fetchDocumentContext = async (documents: Document<StoreMetaData>[]) => {
