@@ -21,6 +21,7 @@
     "@langchain/langgraph": "^1.0.2",
     "@langchain/openai": "^1.0.0",
     "@langchain/textsplitters": "^1.0.0",
+    "@langfuse/client": "^4.4.2",
     "@langfuse/core": "^4.4.2",
     "@langfuse/langchain": "^4.4.2",
     "@langfuse/otel": "^4.4.2",

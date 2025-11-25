@@ -9,6 +9,7 @@ import type {
 } from '../schemas'
 import { ExtractedBrandRulesSchema } from '../schemas'
 import { langfuseHandler } from '../../../server/lib/langfuse'
+import { getPrompt, Prompt } from '../prompts/prompts'
 
 // Helper function to extract text from message content
 function extractTextFromMessage(message: any): string {
@@ -23,20 +24,6 @@ function extractTextFromMessage(message: any): string {
   return String(message.content || '')
 }
 
-// This prompt is for generating a new caption from scratch
-const generationPromptTemplate = new PromptTemplate({
-  template: `You are an expert social media copywriter. Your task is to generate a post caption.
-
-**Brand Voice Rules (ONLY follow these rules, do not add any additional requirements):**
-{rules}
-
-**Post Details:**
-- Topic: {topic}
-
-Generate a single, compelling post caption based on the topic and adhering STRICTLY to ONLY the brand voice rules listed above. Do not include any requirements, styles, or elements that are not explicitly mentioned in the rules above.
-`,
-  inputVariables: ['rules', 'topic'],
-})
 
 // This prompt is for refining a failed or existing caption
 const refinementPromptTemplate = new PromptTemplate({
@@ -102,6 +89,7 @@ export async function generateCaptions(
     .map((r) => `- ${r.title}: ${r.description}`)
     .join('\n')
 
+  const generationPromptTemplate = await getPrompt(Prompt.CaptionGeneration)
   const generationChain = generationPromptTemplate.pipe(creativeModel)
 
   const refinementChain = refinementPromptTemplate.pipe(creativeModel)
