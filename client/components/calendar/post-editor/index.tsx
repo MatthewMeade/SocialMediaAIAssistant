@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react"
 import type { Post, User, Comment } from "@/lib/types"
 import { BrandScorePanel } from "@/components/brand/brand-score-panel"
-import { CaptionGeneratorPanel } from "@/components/ai/caption-generator-panel"
 import { useBrandScore } from "@/hooks/use-brand-score"
 import { usePostAutoSave } from "@/hooks/use-post-auto-save"
 import { useAppEvent } from "@/hooks/use-app-event"
@@ -37,7 +36,6 @@ export function PostEditor({
     date: normalizeDate(post.date),
   })
   const [showBrandScore, setShowBrandScore] = useState(false)
-  const [showCaptionGenerator, setShowCaptionGenerator] = useState(false)
 
   const lastSyncedPostRef = useRef<string | null>(null)
   const lastSavedPostKeyRef = useRef<string | null>(null)
@@ -262,7 +260,6 @@ export function PostEditor({
                   fetchScoreIfNeeded(caption, editedPost.calendarId)
                 }
               }}
-              onOpenCaptionGenerator={() => setShowCaptionGenerator(true)}
             />
 
             <PostBrandScoreCard
@@ -272,7 +269,7 @@ export function PostEditor({
             />
           </div>
 
-          {!showBrandScore && !showCaptionGenerator && (
+          {!showBrandScore && (
             <PostSidebar
               post={editedPost}
               currentUser={currentUser}
@@ -291,24 +288,6 @@ export function PostEditor({
                 isApplyingSuggestions={isApplyingSuggestions}
                 onApplySuggestions={handleApplySuggestions}
                 onClose={() => setShowBrandScore(false)}
-              />
-            </div>
-          )}
-
-          {showCaptionGenerator && editedPost.calendarId && (
-            <div className="w-80 border-l border-border bg-card flex flex-col min-h-0">
-              <CaptionGeneratorPanel
-                calendarId={editedPost.calendarId}
-                existingCaption={editedPost.caption}
-                onApplyCaption={(caption) => {
-                  handleUpdate({ caption })
-                  // Trigger brand score fetch for the new caption
-                  if (editedPost.calendarId) {
-                    fetchScoreIfNeeded(caption, editedPost.calendarId)
-                  }
-                  setShowCaptionGenerator(false)
-                }}
-                onClose={() => setShowCaptionGenerator(false)}
               />
             </div>
           )}

@@ -1,19 +1,24 @@
-import { Sparkles } from "lucide-react"
-import { Button } from "@/components/ui/button"
+import { AITriggerButton } from "@/components/ai/ai-trigger-button"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 
 interface PostCaptionEditorProps {
   caption: string
   onCaptionChange: (caption: string) => void
-  onOpenCaptionGenerator: () => void
 }
 
 export function PostCaptionEditor({
   caption,
   onCaptionChange,
-  onOpenCaptionGenerator,
 }: PostCaptionEditorProps) {
+  // Logic to determine the prompt
+  const getAIPrompt = () => {
+    if (caption && caption.trim().length > 0) {
+      return "Help me edit this post. Here is the current content: " + caption;
+    }
+    return "Help me create a caption for this post.";
+  };
+
   return (
     <div className="space-y-2">
       <Label htmlFor="caption">Caption</Label>
@@ -26,15 +31,13 @@ export function PostCaptionEditor({
           rows={8}
           className="resize-none pr-12"
         />
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={onOpenCaptionGenerator}
-          className="absolute bottom-2 right-2 h-8 w-8 text-primary hover:text-primary hover:bg-primary/10"
-          title="Generate caption with AI"
-        >
-          <Sparkles className="h-4 w-4" />
-        </Button>
+        <div className="absolute bottom-2 right-2">
+          <AITriggerButton 
+            message={getAIPrompt}
+            shouldClear={false} // Keep context if they were already chatting
+            className="h-8 w-8"
+          />
+        </div>
       </div>
       <div className="text-xs text-muted-foreground">{caption.length} characters</div>
     </div>

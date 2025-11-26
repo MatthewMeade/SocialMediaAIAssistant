@@ -5,6 +5,8 @@ import { AppSidebar } from "./app-sidebar"
 import { ChatSidebar } from "../chat/chat-sidebar"
 import { ChatToggleButton } from "../chat/chat-toggle-button"
 import { useCalendars } from "@/lib/hooks/use-calendars" // Import the new hook
+import { useAppEvent } from "@/hooks/use-app-event"
+import { AppEvents } from "@/lib/events"
 
 // 1. Define the context state
 interface IClientContext {
@@ -96,6 +98,13 @@ export default function AppLayout() {
     }),
     [page, currentCalendar?.id, pageState],
   )
+
+  // Listen for AI chat trigger events to open the chat sidebar
+  useAppEvent(AppEvents.TRIGGER_AI_CHAT, () => {
+    if (!isChatOpen) {
+      setIsChatOpen(true)
+    }
+  }, [isChatOpen])
 
   // Early returns AFTER all hooks
   if (isLoading) {

@@ -9,6 +9,7 @@ export const AppEvents = {
   NAVIGATE_TO_CALENDAR: "navigate-to-calendar",
   POST_EDITOR_OPEN: "post-editor-open",
   POST_EDITOR_CLOSE: "post-editor-close",
+  TRIGGER_AI_CHAT: "trigger-ai-chat",
 } as const;
 
 /**
@@ -21,4 +22,13 @@ export const ToolNames = {
   CREATE_POST: "create_post",
   OPEN_POST: "open_post",
 } as const;
+
+/**
+ * Payload for TRIGGER_AI_CHAT event
+ */
+export interface TriggerAIChatPayload {
+  message: string;
+  shouldClear?: boolean; // If true, resets the chat history before sending
+  context?: Record<string, any>; // Optional extra context overrides
+}
 

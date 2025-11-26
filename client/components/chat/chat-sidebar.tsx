@@ -8,12 +8,13 @@ import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/componen
 import { cn } from "@/lib/utils"
 import { apiFetch } from "@/lib/api-client"
 import { appEventBus } from "@/lib/event-bus"
-import { AppEvents, ToolNames } from "@/lib/events"
+import { AppEvents, ToolNames, TriggerAIChatPayload } from "@/lib/events"
 import { ApiRoutes } from "@/lib/api-routes"
 import { useAppContext } from "@/components/layout/app-layout"
 import ReactMarkdown from "react-markdown"
 import { langfuseWeb } from "@/lib/langfuse"
 import { FeedbackDialog } from "./feedback-dialog"
+import { useAppEvent } from "@/hooks/use-app-event"
 
 interface Message {
   role: "user" | "assistant" | "tool"
@@ -623,14 +624,13 @@ export function ChatSidebar({ isOpen, onClose }: ChatSidebarProps) {
   }, [executedToolCalls, clientContext, calendarSlug, navigate, sendToolResult, waitForContext])
 
   /**
-   * Handles sending a user message to the agent.
-   * Updates UI optimistically, then adds the agent's response when it arrives.
-   * If there are pending tool calls, sends cancellation ToolMessages for them.
+   * Executes a message programmatically (bypasses input state).
+   * This is used for triggered messages from events.
    */
-  const handleSend = useCallback(async () => {
-    if (!input.trim() || isLoading) return
+  const executeMessage = useCallback(async (msgContent: string) => {
+    if (!msgContent.trim() || isLoading) return
 
-    const userMessage: Message = { role: "user", content: input.trim() }
+    const userMessage: Message = { role: "user", content: msgContent.trim() }
     const newMessages = [...messages, userMessage]
     
     // Check for pending tool calls (tool calls that haven't been executed)
@@ -647,7 +647,6 @@ export function ChatSidebar({ isOpen, onClose }: ChatSidebarProps) {
     
     // Update UI immediately for better UX (optimistic update)
     setMessages(newMessages)
-    setInput("")
     setIsLoading(true)
 
     try {
@@ -719,7 +718,33 @@ export function ChatSidebar({ isOpen, onClose }: ChatSidebarProps) {
     } finally {
       setIsLoading(false)
     }
-  }, [input, isLoading, messages, executedToolCalls, clientContext, threadId])
+  }, [isLoading, messages, executedToolCalls, clientContext, threadId])
+
+  /**
+   * Handles sending a user message to the agent.
+   * Updates UI optimistically, then adds the agent's response when it arrives.
+   * If there are pending tool calls, sends cancellation ToolMessages for them.
+   */
+  const handleSend = useCallback(async () => {
+    if (!input.trim() || isLoading) return
+    const msgContent = input.trim()
+    setInput("")
+    await executeMessage(msgContent)
+  }, [input, isLoading, executeMessage])
+
+  // Listen for AI chat trigger events
+  useAppEvent<TriggerAIChatPayload>(AppEvents.TRIGGER_AI_CHAT, (payload) => {
+    const { message, shouldClear } = payload
+
+    // If requested, clear previous history
+    if (shouldClear) {
+      startNewChat()
+      // Small timeout to allow state to clear before processing new message
+      setTimeout(() => executeMessage(message), 100)
+    } else {
+      executeMessage(message)
+    }
+  }, [startNewChat, executeMessage])
 
   // 2. Positive Feedback Handler (Immediate)
   const handlePositiveFeedback = async (traceId: string, index: number) => {
