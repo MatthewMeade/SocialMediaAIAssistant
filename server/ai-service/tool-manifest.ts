@@ -1,4 +1,4 @@
-import type { ToolService } from '../services/tool-service'
+import type { ToolService } from './services/tool-service'
 
 /**
  * Context keys that determine which tools are available to the AI agent.

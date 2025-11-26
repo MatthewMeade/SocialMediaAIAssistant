@@ -1,10 +1,10 @@
 import { createAgent, dynamicSystemPromptMiddleware, Runtime, Document } from 'langchain'
-import type { IAiDataRepository } from '../ai-service/repository'
+import type { IAiDataRepository } from '../repository'
 import type { BaseChatModel } from '@langchain/core/language_models/chat_models'
 import type { DallEAPIWrapper } from '@langchain/openai'
 import type { ToolService } from './tool-service'
 import { toolContextSchema } from './tool-service'
-import { getContextKeys, getToolsForContext } from '../ai-service/tool-manifest'
+import { getContextKeys, getToolsForContext } from '../tool-manifest'
 import * as z from 'zod'
 import { searchDocuments } from 'server/ai-service/services/search-service'
 import { StoreMetaData } from 'server/ai-service/vector-store'
@@ -15,7 +15,7 @@ import { propagateAttributes } from '@langfuse/tracing'
 import { CallbackHandler } from "@langfuse/langchain";
 
 
-import { langfuseHandler } from '../lib/langfuse'
+import { langfuseHandler } from '../../lib/langfuse'
 import Langfuse from 'langfuse'
 
 

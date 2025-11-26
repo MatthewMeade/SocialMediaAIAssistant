@@ -1,11 +1,11 @@
 import { tool } from 'langchain'
 import * as z from 'zod'
 import type { ToolRuntime } from '@langchain/core/tools'
-import type { IAiDataRepository } from '../ai-service/repository'
+import type { IAiDataRepository } from '../repository'
 import type { BaseChatModel } from '@langchain/core/language_models/chat_models'
 import type { DallEAPIWrapper } from '@langchain/openai'
-import { getBrandVoiceScore } from '../ai-service/services/grading-service'
-import { generateCaptions, applySuggestions } from '../ai-service/services/generation-service'
+import { getBrandVoiceScore } from './grading-service'
+import { generateCaptions, applySuggestions } from './generation-service'
 
 /**
  * Context schema for tools - passed via LangChain runtime.
