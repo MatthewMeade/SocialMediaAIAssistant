@@ -297,6 +297,7 @@ app.post('/chat', async (c) => {
       response: result.response,
       toolCalls: result.toolCalls,
       threadId: conversationThreadId,
+      traceId: result.traceId
     })
   } catch (error: any) {
     console.error('[AI_ROUTE] Error in chat agent:', error)

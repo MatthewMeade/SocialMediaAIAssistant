@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from "react"
 import type React from "react"
 import { useNavigate, useParams } from "react-router-dom"
-import { X, Send, Sparkles, Check, Calendar, FileText, Plus, RotateCcw } from "lucide-react"
+import { X, Send, Sparkles, Check, Calendar, FileText, Plus, RotateCcw, ThumbsUp, ThumbsDown } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
@@ -12,6 +12,8 @@ import { AppEvents, ToolNames } from "@/lib/events"
 import { ApiRoutes } from "@/lib/api-routes"
 import { useAppContext } from "@/components/layout/app-layout"
 import ReactMarkdown from "react-markdown"
+import { langfuseWeb } from "@/lib/langfuse"
+import { FeedbackDialog } from "./feedback-dialog"
 
 interface Message {
   role: "user" | "assistant" | "tool"
@@ -19,6 +21,8 @@ interface Message {
   toolCalls?: ToolCall[]
   tool_call_id?: string
   name?: string
+  traceId?: string // Add traceId
+  feedbackStatus?: "submitted" | null // Track local status
 }
 
 // Discriminated union for different tool call types
@@ -403,6 +407,9 @@ export function ChatSidebar({ isOpen, onClose }: ChatSidebarProps) {
   ])
   const [input, setInput] = useState("")
   const [isLoading, setIsLoading] = useState(false)
+  const [feedbackModalOpen, setFeedbackModalOpen] = useState(false)
+  const [targetTraceId, setTargetTraceId] = useState<string | null>(null)
+  const [isSubmittingFeedback, setIsSubmittingFeedback] = useState(false)
 
   // Generate a new threadId when calendarId changes
   useEffect(() => {
@@ -491,6 +498,7 @@ export function ChatSidebar({ isOpen, onClose }: ChatSidebarProps) {
         role: "assistant",
         content: data.response || "",
         toolCalls: data.toolCalls,
+        traceId: data.traceId, // Capture the ID from server
       },
     ])
   }, [threadId])
@@ -688,12 +696,14 @@ export function ChatSidebar({ isOpen, onClose }: ChatSidebarProps) {
 
       // Add agent's response (may include tool calls for client-side execution)
       // Include the response content even when tool calls are present, so the AI can provide context
+      // Capture the traceId from server
       setMessages((prev) => [
         ...prev,
         {
           role: "assistant",
           content: data.response || "",
           toolCalls: data.toolCalls,
+          traceId: data.traceId, // Capture the ID from server
         },
       ])
     } catch (error) {
@@ -710,6 +720,60 @@ export function ChatSidebar({ isOpen, onClose }: ChatSidebarProps) {
       setIsLoading(false)
     }
   }, [input, isLoading, messages, executedToolCalls, clientContext, threadId])
+
+  // 2. Positive Feedback Handler (Immediate)
+  const handlePositiveFeedback = async (traceId: string, index: number) => {
+    // Optimistic update
+    setMessages((prev) =>
+      prev.map((m, i) => (i === index ? { ...m, feedbackStatus: "submitted" } : m)),
+    )
+
+    try {
+      await langfuseWeb.score({
+        traceId: traceId,
+        name: "user-feedback",
+        value: 1,
+        comment: "Thumbs up",
+      })
+    } catch (e) {
+      console.error("Failed to send positive feedback", e)
+    }
+  }
+
+  // 3. Negative Feedback Handler (Opens Modal)
+  const onNegativeFeedbackClick = (traceId: string) => {
+    setTargetTraceId(traceId)
+    setFeedbackModalOpen(true)
+  }
+
+  // 4. Submit Negative Feedback
+  const handleNegativeFeedbackSubmit = async (comment: string) => {
+    if (!targetTraceId) return
+
+    setIsSubmittingFeedback(true)
+    try {
+      await langfuseWeb.score({
+        traceId: targetTraceId,
+        name: "user-feedback",
+        value: 0,
+        comment: comment,
+      })
+
+      // Update UI
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.traceId === targetTraceId ? { ...m, feedbackStatus: "submitted" } : m,
+        ),
+      )
+
+      setFeedbackModalOpen(false)
+      setTargetTraceId(null)
+    } catch (e) {
+      console.error("Error submitting feedback", e)
+    } finally {
+      setIsSubmittingFeedback(false)
+    }
+  }
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -763,7 +827,7 @@ export function ChatSidebar({ isOpen, onClose }: ChatSidebarProps) {
           <div
             key={messageKey}
             className={cn(
-              "flex w-full",
+              "flex w-full group",
               message.role === "user" ? "justify-end" : "justify-start",
             )}
           >
@@ -816,6 +880,36 @@ export function ChatSidebar({ isOpen, onClose }: ChatSidebarProps) {
                       >
                         {message.content}
                       </ReactMarkdown>
+                      
+                      {/* Feedback Controls */}
+                      {message.role === "assistant" &&
+                        message.traceId &&
+                        !message.feedbackStatus && (
+                          <div className="flex items-center justify-end gap-2 mt-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-6 w-6 text-muted-foreground hover:text-green-600"
+                              onClick={() => handlePositiveFeedback(message.traceId!, index)}
+                            >
+                              <ThumbsUp className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-6 w-6 text-muted-foreground hover:text-red-600"
+                              onClick={() => onNegativeFeedbackClick(message.traceId!)}
+                            >
+                              <ThumbsDown className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
+                        )}
+
+                      {message.feedbackStatus === "submitted" && (
+                        <p className="text-[10px] text-right text-muted-foreground mt-1">
+                          Thanks for feedback!
+                        </p>
+                      )}
                     </div>
                   )}
                   {/* Render tool calls with custom UI */}
@@ -854,6 +948,13 @@ export function ChatSidebar({ isOpen, onClose }: ChatSidebarProps) {
         )}
         <div ref={messagesEndRef} />
       </div>
+
+      <FeedbackDialog
+        isOpen={feedbackModalOpen}
+        onClose={() => setFeedbackModalOpen(false)}
+        onSubmit={handleNegativeFeedbackSubmit}
+        isSubmitting={isSubmittingFeedback}
+      />
 
       {/* Input */}
       <div className="border-t border-border p-4">

@@ -12,8 +12,11 @@ import { convertSlateToText } from 'server/lib/content-utils'
 import { MemorySaver } from "@langchain/langgraph";
 import { v4 as uuidv4 } from 'uuid';
 import { propagateAttributes } from '@langfuse/tracing'
+import { CallbackHandler } from "@langfuse/langchain";
+
 
 import { langfuseHandler } from '../lib/langfuse'
+import Langfuse from 'langfuse'
 
 
 
@@ -228,7 +231,7 @@ async function invokeAgentWithTimeout(
   input: any[],
   threadId: string,
   userId: string,
-  config?: { context?: z.infer<typeof toolContextSchema> },
+  config?: { context?: z.infer<typeof toolContextSchema> }
 ) {
   // Use propagateAttributes to set sessionId and userId for Langfuse tracking
   // This ensures all observations (including tool calls) are tracked in the same session
@@ -244,7 +247,7 @@ async function invokeAgentWithTimeout(
           configurable: { thread_id: threadId },
           ...config,
           callbacks: [langfuseHandler],
-        }
+        },
       )
     }
   )
@@ -402,7 +405,7 @@ export class ChatService {
       }
     },
     toolContext?: z.infer<typeof toolContextSchema>,
-  ): Promise<{ response: string; toolCalls?: any[], threadId: string }> {
+  ): Promise<{ response: string; toolCalls?: any[], threadId: string, traceId: string }> {
     // 1. Get tools (same as before)
     const contextKeys = getContextKeys(clientContext)
     const tools = getToolsForContext(contextKeys, this.dependencies.toolService)
@@ -454,6 +457,10 @@ export class ChatService {
     // The MemorySaver uses threadId to maintain conversation history
     const thread = threadId ?? uuidv4()
 
+    // CallbackHandler will use the trace with the specified ID
+    // const langfuseHandler = new CallbackHandler({ traceMetadata: trace });
+
+
     // 5. Invoke the agent with just the current user message
     // The MemorySaver automatically loads previous messages from the thread
     // Pass userId to enable Langfuse user tracking
@@ -474,7 +481,8 @@ export class ChatService {
 
     return {
       ...agentResponse,
-      threadId: thread
+      threadId: thread,
+      traceId: langfuseHandler.last_trace_id!
     }
   }
 
