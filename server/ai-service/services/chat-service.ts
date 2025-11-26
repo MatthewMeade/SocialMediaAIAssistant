@@ -1,4 +1,5 @@
-import { createAgent, dynamicSystemPromptMiddleware, Runtime, Document } from 'langchain'
+import { createAgent, dynamicSystemPromptMiddleware, Runtime, Document, createMiddleware } from 'langchain'
+import { AIMessage } from '@langchain/core/messages'
 import type { IAiDataRepository } from '../repository'
 import type { BaseChatModel } from '@langchain/core/language_models/chat_models'
 import type { DallEAPIWrapper } from '@langchain/openai'
@@ -13,7 +14,7 @@ import { MemorySaver } from "@langchain/langgraph";
 import { v4 as uuidv4 } from 'uuid';
 import { propagateAttributes } from '@langfuse/tracing'
 import { CallbackHandler } from "@langfuse/langchain";
-
+import { GuardrailService } from './guardrail-service';
 
 import { langfuseHandler } from '../../lib/langfuse'
 import Langfuse from 'langfuse'
@@ -279,15 +280,26 @@ function extractAgentResponse(response: any): {
   }
 
   // Find the last AIMessage
+  // Check for AIMessage instances first (from LangChain)
   let lastAIMessage: any = null
   for (let i = response.messages.length - 1; i >= 0; i--) {
     const msg = response.messages[i]
-    if (
+
+    // Check if it's an AIMessage instance (has _getType method or is instance of AIMessage)
+    // Also check for serialized AIMessage objects
+    const msgType = msg._getType ? msg._getType() : null
+    const isAIMessage =
+      msgType === 'ai' ||
+      msgType === 'assistant' ||
+      (msg.constructor && msg.constructor.name === 'AIMessage') ||
+      msg instanceof AIMessage ||
       msg.role === 'assistant' ||
       msg.role === 'ai' ||
       msg.role === 'model' ||
-      msg.name === 'model'
-    ) {
+      msg.name === 'model' ||
+      (typeof msg === 'object' && msg.content && !msg.role && !msg._getType) // Fallback for serialized messages
+
+    if (isAIMessage) {
       lastAIMessage = msg
       break
     }
@@ -351,6 +363,15 @@ function extractClientToolCalls(message: any): any[] {
  * Extracts text content from a message.
  */
 function extractMessageContent(message: any): string {
+  // Handle AIMessage instances with getContent method
+  if (message.getContent && typeof message.getContent === 'function') {
+    const content = message.getContent()
+    if (typeof content === 'string') {
+      return content
+    }
+  }
+
+  // Handle direct content property
   if (typeof message.content === 'string') {
     return message.content
   }
@@ -361,6 +382,11 @@ function extractMessageContent(message: any): string {
         typeof block === 'string' ? block : block.text || '',
       )
       .join('')
+  }
+
+  // Fallback: try to stringify if content exists
+  if (message.content) {
+    return String(message.content)
   }
 
   return ''
@@ -375,10 +401,14 @@ const memoryStore = new MemorySaver()
 export class ChatService {
   private dependencies: ChatServiceDependencies
   private memoryStore: MemorySaver
+  private guardrailService: GuardrailService
 
   constructor(dependencies: ChatServiceDependencies) {
     this.dependencies = dependencies
     this.memoryStore = memoryStore
+
+    // Initialize guardrail with the centralized chat model (gpt-4o-mini)
+    this.guardrailService = new GuardrailService(dependencies.chatModel)
   }
 
   /**
@@ -406,7 +436,48 @@ export class ChatService {
     },
     toolContext?: z.infer<typeof toolContextSchema>,
   ): Promise<{ response: string; toolCalls?: any[], threadId: string, traceId: string }> {
-    // 1. Get tools (same as before)
+    // 1. Define the Guardrail Middleware
+    const guardrailMiddleware = createMiddleware({
+      name: "TopicGuardrail",
+      beforeAgent: {
+        hook: async (state) => {
+          // Quick checks to skip invalid states or non-user messages
+          if (!state.messages || state.messages.length === 0) return;
+
+          const lastMessage = state.messages[state.messages.length - 1];
+
+          // Only validate inputs from the human user
+          if (lastMessage._getType() !== "human") return;
+
+          // Delegate logic to the service
+          // We pass previous messages (slice 0 to -1) as history for context awareness
+          const decision = await this.guardrailService.validate(
+            lastMessage.content.toString(),
+            state.messages.slice(0, -1)
+          );
+
+          // If blocked, short-circuit the agent
+          if (!decision.isAllowed) {
+            console.log({ decision })
+            return {
+              messages: [
+                new AIMessage(
+                  decision.refusalMessage ||
+                  "I specialize in social media management and cannot help with that request."
+                )
+              ],
+              jumpTo: "end" // This is the critical instruction that stops the agent
+            };
+          }
+
+          // If allowed, return nothing to let the agent continue normally
+          return;
+        },
+        canJumpTo: ['end']
+      }
+    });
+
+    // 2. Get tools (same as before)
     const contextKeys = getContextKeys(clientContext)
     const tools = getToolsForContext(contextKeys, this.dependencies.toolService)
     if (clientContext?.postId) {
@@ -417,7 +488,7 @@ export class ChatService {
       )
     }
 
-    // 2. Create the agent
+    // 3. Create the agent with the middleware injected
     const agent = createAgent({
       model: this.dependencies.chatModel,
       tools: tools,
@@ -426,8 +497,12 @@ export class ChatService {
 
       checkpointer: this.memoryStore, // Use the persistent memory store
 
-      // 3. Add the middleware
+      // 4. Add middleware to the pipeline
       middleware: [
+        // Add Guardrail middleware FIRST so it runs before anything else
+        guardrailMiddleware,
+
+        // Existing dynamic context middleware
         dynamicSystemPromptMiddleware(async (state, _config: Runtime<z.infer<typeof toolContextSchema>>) => {
           // Run your ID-based retrieval logic
           // We need to pass repo and clientContext separately since they're not in the tool context
@@ -478,6 +553,16 @@ export class ChatService {
     // No special continuation logic needed - the frontend handles sending
     // "The tool action has been completed" messages when tools finish
     const agentResponse = extractAgentResponse(response)
+
+    // Debug: Log the response structure when response is empty (might be guardrail blocking)
+    if (!agentResponse.response && response.messages) {
+      console.log('[ChatService] Empty response detected, checking messages:', JSON.stringify(response.messages.map((m: any) => ({
+        type: m._getType ? m._getType() : m.constructor?.name || 'unknown',
+        content: m.content,
+        role: m.role,
+        name: m.name
+      })), null, 2))
+    }
 
     return {
       ...agentResponse,

@@ -61,3 +61,11 @@ export const ExtractedBrandRulesSchema = z.object({
   ).describe("A list of brand guidelines extracted from the text."),
 })
 export type ExtractedBrandRules = z.infer<typeof ExtractedBrandRulesSchema>
+
+// Schema for Guardrail Decisions
+export const GuardrailDecisionSchema = z.object({
+  isAllowed: z.boolean().describe("Whether the user input is relevant to the allowed topics."),
+  refusalMessage: z.string().nullable().describe("A polite, single-sentence refusal message if not allowed. Null if allowed."),
+})
+
+export type GuardrailDecision = z.infer<typeof GuardrailDecisionSchema>

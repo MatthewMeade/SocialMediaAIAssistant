@@ -4,7 +4,8 @@ import { LangfuseClient } from "@langfuse/client";
 const langfuse = new LangfuseClient();
 
 export enum Prompt {
-    CaptionGeneration =  'Caption Generation'
+    CaptionGeneration =  'Caption Generation',
+    Guardrail = 'Input Guardrail'
 }
 
 
