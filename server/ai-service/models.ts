@@ -8,6 +8,10 @@ export const chatModel = new ChatOpenAI({
   temperature: 0.2,
 })
 
+export const nanoModel = new ChatOpenAI({
+  model: 'gpt-5-nano'
+})
+
 // You can also export other models, e.g., a more creative one for generation
 export const creativeModel = new ChatOpenAI({
   model: 'gpt-4o',

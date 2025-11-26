@@ -82,7 +82,7 @@ export async function generateCaptions(
   request: CaptionGenerationRequest,
   brandRules: BrandRule[],
   creativeModel: BaseChatModel,
-  graderFunc: GraderFunction,
+  // graderFunc: GraderFunction,
 ): Promise<CaptionGenerationResult> {
   const enabledRules = brandRules.filter((r) => r.enabled)
   const rulesString = enabledRules
@@ -92,65 +92,73 @@ export async function generateCaptions(
   const generationPromptTemplate = await getPrompt(Prompt.CaptionGeneration)
   const generationChain = generationPromptTemplate.pipe(creativeModel)
 
-  const refinementChain = refinementPromptTemplate.pipe(creativeModel)
+  // const refinementChain = refinementPromptTemplate.pipe(creativeModel)
 
-  let initialCaption: string
-    let initialScore: BrandScore
+  // let initialCaption: string
+  //   let initialScore: BrandScore
 
-  // 1. Get Initial Caption
-  if (request.existingCaption) {
-    initialCaption = request.existingCaption
-  } else {
-    // Generate from scratch
-    // If no enabled rules, use a default message
+  // // 1. Get Initial Caption
+  // if (request.existingCaption) {
+  //   initialCaption = request.existingCaption
+  // } else {
+  //   // Generate from scratch
+  //   // If no enabled rules, use a default message
+  //   const rulesForPrompt = rulesString || "No specific brand voice rules are currently active."
+  //   const result = await generationChain.invoke({
+  //     topic: request.topic,
+  //     rules: rulesForPrompt,
+  //   }, { callbacks: [langfuseHandler] })
+  //   initialCaption = extractTextFromMessage(result)
+  // }
+
     const rulesForPrompt = rulesString || "No specific brand voice rules are currently active."
     const result = await generationChain.invoke({
       topic: request.topic,
       rules: rulesForPrompt,
     }, { callbacks: [langfuseHandler] })
-    initialCaption = extractTextFromMessage(result)
-  }
+
+    const initialCaption = extractTextFromMessage(result)
 
   // 2. Evaluate Initial Caption
-    initialScore = await graderFunc(initialCaption, brandRules)
+  // initialScore = await graderFunc(initialCaption, brandRules)
 
   // 3. Reflect & Refine (if needed)
-    if (initialScore.overall < 85 && enabledRules.length > 0) {
-    // Score is low, refine it once
-    const feedback = `
-      Overall Score: ${initialScore.overall}/100.
-      Suggestions: ${initialScore.suggestions.join(', ')}
-      Rules Violated: ${initialScore.rules
-        .filter((r) => r.score < 70)
-        .map((r) => r.feedback)
-        .join(', ')}
-    `
+  //   if (initialScore.overall < 25 && enabledRules.length > 0) {
+  //   // Score is low, refine it once
+  //   const feedback = `
+  //     Overall Score: ${initialScore.overall}/100.
+  //     Suggestions: ${initialScore.suggestions.join(', ')}
+  //     Rules Violated: ${initialScore.rules
+  //       .filter((r) => r.score < 70)
+  //       .map((r) => r.feedback)
+  //       .join(', ')}
+  //   `
 
-    const rulesForRefinement = rulesString || "No specific brand voice rules are currently active."
-    const result = await refinementChain.invoke({
-      topic: request.topic,
-      rules: rulesForRefinement,
-      failedCaption: initialCaption,
-      feedback,
-    }, { callbacks: [langfuseHandler] })
-    const refinedCaption = extractTextFromMessage(result)
+  //   const rulesForRefinement = rulesString || "No specific brand voice rules are currently active."
+  //   const result = await refinementChain.invoke({
+  //     topic: request.topic,
+  //     rules: rulesForRefinement,
+  //     failedCaption: initialCaption,
+  //     feedback,
+  //   }, { callbacks: [langfuseHandler] })
+  //   const refinedCaption = extractTextFromMessage(result)
 
-    // 4. Evaluate Refined Caption
-        const refinedScore = await graderFunc(refinedCaption, brandRules)
+  //   // 4. Evaluate Refined Caption
+  //       const refinedScore = await graderFunc(refinedCaption, brandRules)
 
-        // 5. Return the best caption (highest score)
-        if (refinedScore.overall > initialScore.overall) {
-            return {
-                caption: refinedCaption,
-                score: refinedScore,
-            }
-        }
-  }
+  //       // 5. Return the best caption (highest score)
+  //       if (refinedScore.overall > initialScore.overall) {
+  //           return {
+  //               caption: refinedCaption,
+  //               score: refinedScore,
+  //           }
+  //       }
+  // }
 
     // Return the initial caption (either it was good enough or refinement didn't help)
   return {
       caption: initialCaption,
-      score: initialScore,
+    // score: initialScore,
   }
 }
 

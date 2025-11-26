@@ -35,7 +35,7 @@ export type GeneratedCaption = z.infer<typeof GeneratedCaptionSchema>
 // Schema for the final API response - returns a single caption
 export const CaptionGenerationResultSchema = z.object({
   caption: z.string().describe('The generated caption.'),
-  score: BrandScoreSchema.nullable().describe('The brand score for the generated caption.'),
+  // score: BrandScoreSchema.nullable().describe('The brand score for the generated caption.'),
 })
 export type CaptionGenerationResult = z.infer<
   typeof CaptionGenerationResultSchema

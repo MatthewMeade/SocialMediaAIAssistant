@@ -537,6 +537,21 @@ export class ChatService {
       )
     }
 
+    // Load standard context
+    const dynamicContext = await loadContextualData({
+      clientContext: clientContext,
+      toolService: this.dependencies.toolService,
+      repo: this.dependencies.repo,
+    });
+
+    // Retrieve the plan from the closure variable
+    const plan = generatedPlan || "";
+
+    // Fetch RAG docs (existing logic)
+    const vectorSearchResults = (await searchDocuments({ history: [], input, calendarId: clientContext?.calendarId! }))
+    const documentResults = await this.fetchDocumentContext(vectorSearchResults);
+
+
     // 4. Create the agent with the middleware injected
     const agent = createAgent({
       model: this.dependencies.chatModel,
@@ -554,19 +569,6 @@ export class ChatService {
 
         // Context Injection (Updated to include plan)
         dynamicSystemPromptMiddleware(async (state, _config: Runtime<z.infer<typeof toolContextSchema>>) => {
-          // Load standard context
-          const dynamicContext = await loadContextualData({
-            clientContext: clientContext,
-            toolService: this.dependencies.toolService,
-            repo: this.dependencies.repo,
-          });
-
-          // Retrieve the plan from the closure variable
-          const plan = generatedPlan || "";
-
-          // Fetch RAG docs (existing logic)
-          const vectorSearchResults = (await searchDocuments({ history: state.messages, input, calendarId: clientContext?.calendarId! }))
-          const documentResults = await this.fetchDocumentContext(vectorSearchResults);
 
           // Combine everything
           return dynamicContext + "\n" + documentResults + "\n" + plan;
@@ -574,9 +576,9 @@ export class ChatService {
 
 
         // Add Planner middleware SECOND to generate plans
-        plannerMiddleware,
+        // plannerMiddleware,
 
-        todoListMiddleware(),
+        // todoListMiddleware(),
       ],
     })
 
