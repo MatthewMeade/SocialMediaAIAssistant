@@ -1,5 +1,5 @@
-import { createAgent, dynamicSystemPromptMiddleware, Runtime, Document, createMiddleware } from 'langchain'
-import { AIMessage } from '@langchain/core/messages'
+import { createAgent, dynamicSystemPromptMiddleware, Runtime, Document, createMiddleware, todoListMiddleware } from 'langchain'
+import { AIMessage, SystemMessage } from '@langchain/core/messages'
 import type { IAiDataRepository } from '../repository'
 import type { BaseChatModel } from '@langchain/core/language_models/chat_models'
 import type { DallEAPIWrapper } from '@langchain/openai'
@@ -13,11 +13,10 @@ import { convertSlateToText } from 'server/lib/content-utils'
 import { MemorySaver } from "@langchain/langgraph";
 import { v4 as uuidv4 } from 'uuid';
 import { propagateAttributes } from '@langfuse/tracing'
-import { CallbackHandler } from "@langfuse/langchain";
 import { GuardrailService } from './guardrail-service';
+import { PlannerService } from './planner-service';
 
 import { langfuseHandler } from '../../lib/langfuse'
-import Langfuse from 'langfuse'
 
 
 
@@ -39,6 +38,10 @@ export interface ChatServiceDependencies {
  * System prompt for the social media content assistant.
  */
 const systemPrompt = `You are an expert AI assistant for social media content management. You help users create, manage, and optimize their social media content.
+
+**PLANNING INSTRUCTION:**
+If a **CURRENT PLAN** is provided in the context below, you MUST follow it step-by-step. Do not deviate unless the user explicitly changes the topic.
+If no plan is provided, respond naturally using your tools as needed.
 
 CRITICAL: You MUST use tools to help users. Do NOT just provide text responses when tools are available.
 
@@ -402,6 +405,7 @@ export class ChatService {
   private dependencies: ChatServiceDependencies
   private memoryStore: MemorySaver
   private guardrailService: GuardrailService
+  private plannerService: PlannerService
 
   constructor(dependencies: ChatServiceDependencies) {
     this.dependencies = dependencies
@@ -409,6 +413,9 @@ export class ChatService {
 
     // Initialize guardrail with the centralized chat model (gpt-4o-mini)
     this.guardrailService = new GuardrailService(dependencies.chatModel)
+
+    // Initialize planner with the centralized chat model
+    this.plannerService = new PlannerService(dependencies.chatModel)
   }
 
   /**
@@ -477,7 +484,49 @@ export class ChatService {
       }
     });
 
-    // 2. Get tools (same as before)
+    // 2. Define the Planner Middleware
+    // Use a closure variable to store the generated plan
+    let generatedPlan: string | null = null;
+
+    const plannerMiddleware = createMiddleware({
+      name: "Planner",
+      beforeAgent: {
+        hook: async (state) => {
+          const lastMessage = state.messages[state.messages.length - 1];
+
+          // Optimization: Only run planner on user messages
+          if (lastMessage._getType() !== "human") {
+            generatedPlan = null; // Reset plan for non-user messages
+            return;
+          }
+
+          // Serialize context for the planner (avoid sending huge objects)
+          const contextSummary = JSON.stringify({
+            page: clientContext?.page,
+            component: clientContext?.component,
+            hasOpenPost: !!clientContext?.postId,
+            hasOpenNote: !!clientContext?.noteId,
+            currentDate: new Date().toISOString().split('T')[0]
+          });
+
+          // Generate the plan
+          generatedPlan = await this.plannerService.generatePlan(
+            lastMessage.content.toString(),
+            contextSummary
+          );
+
+          if (generatedPlan) {
+            console.log({ generatedPlan })
+            return {
+              messages: [new SystemMessage(generatedPlan)],
+
+            }
+          }
+        }
+      }
+    });
+
+    // 3. Get tools (same as before)
     const contextKeys = getContextKeys(clientContext)
     const tools = getToolsForContext(contextKeys, this.dependencies.toolService)
     if (clientContext?.postId) {
@@ -488,7 +537,7 @@ export class ChatService {
       )
     }
 
-    // 3. Create the agent with the middleware injected
+    // 4. Create the agent with the middleware injected
     const agent = createAgent({
       model: this.dependencies.chatModel,
       tools: tools,
@@ -497,38 +546,46 @@ export class ChatService {
 
       checkpointer: this.memoryStore, // Use the persistent memory store
 
-      // 4. Add middleware to the pipeline
+      // 5. Add middleware to the pipeline
       middleware: [
         // Add Guardrail middleware FIRST so it runs before anything else
         guardrailMiddleware,
 
-        // Existing dynamic context middleware
+
+        // Context Injection (Updated to include plan)
         dynamicSystemPromptMiddleware(async (state, _config: Runtime<z.infer<typeof toolContextSchema>>) => {
-          // Run your ID-based retrieval logic
-          // We need to pass repo and clientContext separately since they're not in the tool context
+          // Load standard context
           const dynamicContext = await loadContextualData({
             clientContext: clientContext,
             toolService: this.dependencies.toolService,
             repo: this.dependencies.repo,
-          })
+          });
 
+          // Retrieve the plan from the closure variable
+          const plan = generatedPlan || "";
 
+          // Fetch RAG docs (existing logic)
           const vectorSearchResults = (await searchDocuments({ history: state.messages, input, calendarId: clientContext?.calendarId! }))
-          const documentResults = await this.fetchDocumentContext(vectorSearchResults)
+          const documentResults = await this.fetchDocumentContext(vectorSearchResults);
 
-
-          // Return the dynamic context string to be appended to the system prompt
-          return dynamicContext + "\n" + documentResults
+          // Combine everything
+          return dynamicContext + "\n" + documentResults + "\n" + plan;
         }),
+
+
+        // Add Planner middleware SECOND to generate plans
+        plannerMiddleware,
+
+        todoListMiddleware(),
       ],
     })
 
-    // 3. Validate tool context
+    // 6. Validate tool context
     if (!toolContext) {
       throw new Error('Tool context (userId, calendarId) is required')
     }
 
-    // 4. Generate or use provided threadId
+    // 7. Generate or use provided threadId
     // The MemorySaver uses threadId to maintain conversation history
     const thread = threadId ?? uuidv4()
 
@@ -536,7 +593,7 @@ export class ChatService {
     // const langfuseHandler = new CallbackHandler({ traceMetadata: trace });
 
 
-    // 5. Invoke the agent with just the current user message
+    // 8. Invoke the agent with just the current user message
     // The MemorySaver automatically loads previous messages from the thread
     // Pass userId to enable Langfuse user tracking
     const response = await invokeAgentWithTimeout(
@@ -549,7 +606,7 @@ export class ChatService {
       },
     )
 
-    // 6. Extract and return the response
+    // 9. Extract and return the response
     // No special continuation logic needed - the frontend handles sending
     // "The tool action has been completed" messages when tools finish
     const agentResponse = extractAgentResponse(response)

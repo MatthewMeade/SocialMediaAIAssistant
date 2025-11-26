@@ -69,3 +69,13 @@ export const GuardrailDecisionSchema = z.object({
 })
 
 export type GuardrailDecision = z.infer<typeof GuardrailDecisionSchema>
+
+// Schema for Planning Decisions
+// Note: OpenAI structured outputs require optional fields to also be nullable
+export const PlanSchema = z.object({
+  workflowId: z.string().nullable().optional().describe("The ID of the matched workflow from the provided list, if any."),
+  steps: z.array(z.string()).nullable().optional().describe("The specific, ordered list of steps the agent should take."),
+  reasoning: z.string().describe("Brief explanation of why this plan was chosen (or why no plan is needed).")
+})
+
+export type Plan = z.infer<typeof PlanSchema>
