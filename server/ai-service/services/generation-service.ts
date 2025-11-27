@@ -84,13 +84,17 @@ export async function generateCaptions(
   creativeModel: BaseChatModel,
   // graderFunc: GraderFunction,
 ): Promise<CaptionGenerationResult> {
-  const enabledRules = brandRules.filter((r) => r.enabled)
-  const rulesString = enabledRules
-    .map((r) => `- ${r.title}: ${r.description}`)
-    .join('\n')
+  console.log('[Performance] Starting generateCaptions');
+  console.time('[Performance] generateCaptions');
+  
+  try {
+    const enabledRules = brandRules.filter((r) => r.enabled)
+    const rulesString = enabledRules
+      .map((r) => `- ${r.title}: ${r.description}`)
+      .join('\n')
 
-  const generationPromptTemplate = await getPrompt(Prompt.CaptionGeneration)
-  const generationChain = generationPromptTemplate.pipe(creativeModel)
+    const generationPromptTemplate = await getPrompt(Prompt.CaptionGeneration)
+    const generationChain = generationPromptTemplate.pipe(creativeModel)
 
   // const refinementChain = refinementPromptTemplate.pipe(creativeModel)
 
@@ -156,9 +160,15 @@ export async function generateCaptions(
   // }
 
     // Return the initial caption (either it was good enough or refinement didn't help)
-  return {
+    const finalResult = {
       caption: initialCaption,
     // score: initialScore,
+    }
+    console.timeEnd('[Performance] generateCaptions');
+    return finalResult;
+  } catch (error) {
+    console.timeEnd('[Performance] generateCaptions');
+    throw error;
   }
 }
 
@@ -170,16 +180,26 @@ export async function applySuggestions(
   suggestions: string[],
   chatModel: BaseChatModel,
 ): Promise<string> {
-  const chain = applySuggestionsPromptTemplate.pipe(chatModel)
+  console.log('[Performance] Starting applySuggestions');
+  console.time('[Performance] applySuggestions');
+  
+  try {
+    const chain = applySuggestionsPromptTemplate.pipe(chatModel)
 
-  const suggestionsString = suggestions.map((s) => `- ${s}`).join('\n')
+    const suggestionsString = suggestions.map((s) => `- ${s}`).join('\n')
 
-  const result = await chain.invoke({
-    caption: caption || '(No caption provided)',
-    suggestions: suggestionsString,
-  }, { callbacks: [langfuseHandler] })
+    const result = await chain.invoke({
+      caption: caption || '(No caption provided)',
+      suggestions: suggestionsString,
+    }, { callbacks: [langfuseHandler] })
 
-  return extractTextFromMessage(result)
+    const finalResult = extractTextFromMessage(result);
+    console.timeEnd('[Performance] applySuggestions');
+    return finalResult;
+  } catch (error) {
+    console.timeEnd('[Performance] applySuggestions');
+    throw error;
+  }
 }
 
 // Prompt template for extracting brand rules from text

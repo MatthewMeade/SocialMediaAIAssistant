@@ -15,6 +15,7 @@ import ReactMarkdown from "react-markdown"
 import { langfuseWeb } from "@/lib/langfuse"
 import { FeedbackDialog } from "./feedback-dialog"
 import { useAppEvent } from "@/hooks/use-app-event"
+import { useChatStream } from "@/hooks/use-chat-stream"
 
 interface Message {
   role: "user" | "assistant" | "tool"
@@ -389,16 +390,27 @@ export function ChatSidebar({ isOpen, onClose }: ChatSidebarProps) {
     return checkFn(contextRef.current)
   }, [])
 
-  // Generate a new threadId when calendarId is available
-  // Chats are ephemeral - threadId is only used for the current session
+  // Optimistic Thread ID Generation
+  // Initialize immediately so we have an ID ready for the stream subscription
   const generateThreadId = (calendarId: string | null | undefined): string => {
     if (calendarId) {
-      return `${calendarId}-${Date.now()}`
+      return `${calendarId}-${crypto.randomUUID()}`
     }
-    return `default-${Date.now()}`
+    return `default-${crypto.randomUUID()}`
   }
 
   const [threadId, setThreadId] = useState<string>(() => generateThreadId(clientContext.calendarId ?? undefined))
+
+  // New State for Streaming
+  const [streamingContent, setStreamingContent] = useState("")
+  const [aiStatus, setAiStatus] = useState<string | null>(null)
+
+  // Connect Stream Hook
+  const { connect, disconnect } = useChatStream({
+    threadId,
+    onToken: (token) => setStreamingContent(prev => prev + token),
+    onStatusChange: setAiStatus
+  })
 
   const [messages, setMessages] = useState<Message[]>([
     {
@@ -430,7 +442,10 @@ export function ChatSidebar({ isOpen, onClose }: ChatSidebarProps) {
     setThreadId(generateThreadId(clientContext.calendarId ?? undefined))
     setExecutedToolCalls(new Set())
     setInput("")
-  }, [clientContext.calendarId])
+    setStreamingContent("")
+    setAiStatus(null)
+    disconnect()
+  }, [clientContext.calendarId, disconnect])
   const [executedToolCalls, setExecutedToolCalls] = useState<Set<string>>(new Set())
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -647,6 +662,12 @@ export function ChatSidebar({ isOpen, onClose }: ChatSidebarProps) {
     
     // Update UI immediately for better UX (optimistic update)
     setMessages(newMessages)
+    
+    // START STREAMING
+    setStreamingContent("")
+    setAiStatus("Thinking...")
+    connect()
+    
     setIsLoading(true)
 
     try {
@@ -670,14 +691,14 @@ export function ChatSidebar({ isOpen, onClose }: ChatSidebarProps) {
         pageState: clientContext.pageState || undefined,
       }
 
-      // Send only the current user message - the memory store handles conversation history
+      // SEND REQUEST (Pass the CLIENT-GENERATED threadId)
       const response = await apiFetch(ApiRoutes.AI.CHAT, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           input: userMessage.content,
           calendarId: clientContext.calendarId || '',
-          threadId,
+          threadId, // CRITICAL: Use client-generated threadId
           clientContext: backendClientContext,
         }),
       })
@@ -693,9 +714,7 @@ export function ChatSidebar({ isOpen, onClose }: ChatSidebarProps) {
         setThreadId(data.threadId)
       }
 
-      // Add agent's response (may include tool calls for client-side execution)
-      // Include the response content even when tool calls are present, so the AI can provide context
-      // Capture the traceId from server
+      // Finalize: Replace streaming content with final response
       setMessages((prev) => [
         ...prev,
         {
@@ -716,9 +735,13 @@ export function ChatSidebar({ isOpen, onClose }: ChatSidebarProps) {
         },
       ])
     } finally {
+      // STOP STREAMING
       setIsLoading(false)
+      setStreamingContent("")
+      setAiStatus(null)
+      disconnect()
     }
-  }, [isLoading, messages, executedToolCalls, clientContext, threadId])
+  }, [isLoading, messages, executedToolCalls, clientContext, threadId, connect, disconnect])
 
   /**
    * Handles sending a user message to the agent.
@@ -960,14 +983,70 @@ export function ChatSidebar({ isOpen, onClose }: ChatSidebarProps) {
           </div>
             )
           })}
+        {/* Streaming Bubble (Only visible when loading) */}
         {isLoading && (
-          <div className="flex justify-start">
-            <div className="max-w-[80%] rounded-lg bg-muted px-4 py-2">
-              <div className="flex gap-1">
-                <div className="h-2 w-2 rounded-full bg-muted-foreground animate-bounce" style={{ animationDelay: "0ms" }} />
-                <div className="h-2 w-2 rounded-full bg-muted-foreground animate-bounce" style={{ animationDelay: "150ms" }} />
-                <div className="h-2 w-2 rounded-full bg-muted-foreground animate-bounce" style={{ animationDelay: "300ms" }} />
-              </div>
+          <div className="flex w-full justify-start">
+            <div className="max-w-[80%] rounded-lg px-4 py-2 bg-muted text-muted-foreground flex flex-col gap-2">
+              
+              {/* Status Bar */}
+              {aiStatus && (
+                <div className="flex items-center gap-2 text-xs font-medium text-primary/80 animate-pulse">
+                  <Sparkles className="h-3 w-3" />
+                  {aiStatus}
+                </div>
+              )}
+
+              {/* Stream Content */}
+              {streamingContent ? (
+                <div className="text-sm">
+                  <ReactMarkdown
+                    components={{
+                      p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
+                      ul: ({ children }) => <ul className="list-disc list-inside mb-2 space-y-1">{children}</ul>,
+                      ol: ({ children }) => <ol className="list-decimal list-inside mb-2 space-y-1">{children}</ol>,
+                      li: ({ children }) => <li className="ml-2">{children}</li>,
+                      h1: ({ children }) => <h1 className="text-lg font-bold mb-2 mt-2 first:mt-0">{children}</h1>,
+                      h2: ({ children }) => <h2 className="text-base font-bold mb-2 mt-2 first:mt-0">{children}</h2>,
+                      h3: ({ children }) => <h3 className="text-sm font-bold mb-1 mt-2 first:mt-0">{children}</h3>,
+                      code: ({ children, className }) => {
+                        const isInline = !className || !className.includes('language-')
+                        return isInline ? (
+                          <code className="bg-muted/50 px-1 py-0.5 rounded text-xs font-mono">{children}</code>
+                        ) : (
+                          <code className="text-xs font-mono">{children}</code>
+                        )
+                      },
+                      pre: ({ children }) => (
+                        <pre className="bg-muted/50 p-2 rounded text-xs font-mono overflow-x-auto mb-2 whitespace-pre">
+                          {children}
+                        </pre>
+                      ),
+                      blockquote: ({ children }) => (
+                        <blockquote className="border-l-4 border-muted-foreground/30 pl-3 italic my-2">{children}</blockquote>
+                      ),
+                      a: ({ href, children }) => (
+                        <a href={href} target="_blank" rel="noopener noreferrer" className="text-primary underline hover:text-primary/80">
+                          {children}
+                        </a>
+                      ),
+                      strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
+                      em: ({ children }) => <em className="italic">{children}</em>,
+                      hr: () => <hr className="my-3 border-border" />,
+                    }}
+                  >
+                    {streamingContent}
+                  </ReactMarkdown>
+                </div>
+              ) : (
+                /* Empty State (Dots) if status is null or just starting */
+                !aiStatus && (
+                  <div className="flex gap-1 h-6 items-center">
+                    <div className="h-2 w-2 rounded-full bg-current animate-bounce" />
+                    <div className="h-2 w-2 rounded-full bg-current animate-bounce" style={{ animationDelay: "150ms" }} />
+                    <div className="h-2 w-2 rounded-full bg-current animate-bounce" style={{ animationDelay: "300ms" }} />
+                  </div>
+                )
+              )}
             </div>
           </div>
         )}

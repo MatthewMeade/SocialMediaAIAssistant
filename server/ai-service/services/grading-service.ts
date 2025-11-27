@@ -28,30 +28,43 @@ export async function getBrandVoiceScore(
   brandRules: BrandRule[],
   chatModel: BaseChatModel,
 ): Promise<BrandScore> {
-  // Format rules for the prompt
-  const rulesString = brandRules
-    .filter((r) => r.enabled)
-    .map((r) => `- **${r.title} (ID: ${r.id}):** ${r.description}`)
-    .join('\n')
+  console.log('[Performance] Starting getBrandVoiceScore');
+  console.time('[Performance] getBrandVoiceScore');
+  
+  try {
+    // Format rules for the prompt
+    const rulesString = brandRules
+      .filter((r) => r.enabled)
+      .map((r) => `- **${r.title} (ID: ${r.id}):** ${r.description}`)
+      .join('\n')
 
-  if (!rulesString) {
-    // No enabled rules, return a default score
-    return {
-      overall: 100,
-      rules: [],
-      suggestions: ['No active brand rules were provided to grade against.'],
+    if (!rulesString) {
+      // No enabled rules, return a default score
+      const result = {
+        overall: 100,
+        rules: [],
+        suggestions: ['No active brand rules were provided to grade against.'],
+      }
+      console.timeEnd('[Performance] getBrandVoiceScore');
+      return result;
     }
+
+    // Create the chain with structured output
+    const chain = graderPromptTemplate.pipe(
+      chatModel.withStructuredOutput(BrandScoreSchema, {
+        name: 'brand_voice_grader',
+      }),
+    )
+
+    const result = await chain.invoke({
+      rules: rulesString,
+      caption: caption || '(No caption provided)',
+    }, { callbacks: [langfuseHandler] })
+    
+    console.timeEnd('[Performance] getBrandVoiceScore');
+    return result;
+  } catch (error) {
+    console.timeEnd('[Performance] getBrandVoiceScore');
+    throw error;
   }
-
-  // Create the chain with structured output
-  const chain = graderPromptTemplate.pipe(
-    chatModel.withStructuredOutput(BrandScoreSchema, {
-      name: 'brand_voice_grader',
-    }),
-  )
-
-  return await chain.invoke({
-    rules: rulesString,
-    caption: caption || '(No caption provided)',
-  }, { callbacks: [langfuseHandler] })
 }

@@ -1,4 +1,4 @@
-import { createAgent, dynamicSystemPromptMiddleware, Runtime, Document, createMiddleware, todoListMiddleware } from 'langchain'
+import { createAgent, dynamicSystemPromptMiddleware, Runtime, Document, createMiddleware } from 'langchain'
 import { AIMessage, SystemMessage } from '@langchain/core/messages'
 import type { IAiDataRepository } from '../repository'
 import type { BaseChatModel } from '@langchain/core/language_models/chat_models'
@@ -17,6 +17,8 @@ import { GuardrailService } from './guardrail-service';
 import { PlannerService } from './planner-service';
 
 import { langfuseHandler } from '../../lib/langfuse'
+import { StreamingCallbackHandler } from '../streaming-callback'
+import { streamManager } from '../stream-manager'
 
 
 
@@ -37,77 +39,67 @@ export interface ChatServiceDependencies {
 /**
  * System prompt for the social media content assistant.
  */
-const systemPrompt = `You are an expert AI assistant for social media content management. You help users create, manage, and optimize their social media content.
+const systemPrompt = `You are an expert AI assistant for social media content management.
+
+**CORE DIRECTIVE: NO PLAIN TEXT CAPTIONS**
+You are FORBIDDEN from outputting a generated caption as plain text in the chat. 
+- If you generate a caption, you MUST apply it to the editor immediately using the 'apply_caption_to_open_post' tool.
+- If you cannot apply it (no post is open), you must ask the user to open a post first.
+- **Failure condition:** If your response contains a hashtag or a full caption in the text body, you have failed.
 
 **PLANNING INSTRUCTION:**
-If a **CURRENT PLAN** is provided in the context below, you MUST follow it step-by-step. Do not deviate unless the user explicitly changes the topic.
-If no plan is provided, respond naturally using your tools as needed.
+If a **CURRENT PLAN** is provided in the context below, follow it strictly.
 
-CRITICAL: You MUST use tools to help users. Do NOT just provide text responses when tools are available.
+**TOOL USAGE PROTOCOL:**
 
-**When to use tools:**
-1. **generate_caption**: ALWAYS use this tool when users ask you to create, write, or generate a caption for a post. Extract the topic from their request, then call generate_caption with the topic. Do NOT write the caption directly in your response - use the tool!
+1. **generate_caption**
+   - **Trigger:** User asks to write/create/generate content.
+   - **Input:** Extract the specific topic.
+   - **Output:** This tool returns raw data. Do NOT show this data to the user. Pass it to the 'apply' tool.
 
-2. **get_posts**: Use this tool when users ask about their posts, want to see what's scheduled, or need information about existing content.
+2. **create_post** (Client Action)
+   - **Trigger:** User wants to make/schedule a new post.
+   - **Required Info:** Date (ISO, "today", "tomorrow") AND Topic.
+   - **Action:** Call this ONCE to open the editor.
+   - **Next Step:** Wait for the tool result to confirm the editor is open before generating the caption.
 
-3. **grade_caption**: Use this tool when users ask you to evaluate, grade, review, or score a caption. This tool grades the caption against brand voice rules and returns a score (0-100), rule breakdown, and suggestions for improvement.
+3. **apply_caption_to_open_post** (Client Action)
+   - **Trigger:** You have a generated caption AND a post is open (Context: postId exists).
+   - **Action:** Call this immediately after 'generate_caption'.
+   - **Permission:** Do NOT ask for confirmation. The tool handles the UI permission request.
 
-4. **apply_caption_to_open_post**:
-   - **AUTOMATICALLY use this tool** when you've generated a caption AND a post is open (check the "Current Post" context). 
-   - **IMPORTANT**: This tool shows a UI card/button that asks the user for permission - you do NOT need to ask for confirmation before calling the tool. The tool itself handles the permission request via the UI.
-   - Also use this tool when users explicitly ask you to update/save a caption.
-   - You can only use this tool when a post is open (check the "Current Post" context). Use the Post ID from that context as the postId parameter.
-   - The user will see the suggestion in a card and can click to accept or ignore it - the tool call itself is the permission request.
+4. **get_posts**, **open_post**, **grade_caption**, **navigate_to_calendar**
+   - Use these standard tools for retrieval, navigation, and grading tasks.
 
-5. **create_post**:
-   - Use this tool when users ask to create a new post, add a post, or schedule a post.
-   - **WORKFLOW**: When a user asks you to "make a post" or "create a post":
-     **STEP 1**: Ask the user which date they want to schedule the post for (e.g., "today", "tomorrow", or a specific date like "2025-11-26") AND what topic they want.
-     **STEP 2**: Once you have BOTH the date AND topic:
-       a) FIRST: Call create_post with the date ONCE - This opens the post editor modal on the client and saves the post immediately
-       b) THEN: Always provide a text response explaining what you're doing, like "I've created and opened the post editor for [date]. Now I'll generate a caption for your post about [topic]."
-       c) THEN: Call generate_caption with the topic
-       d) FINALLY: Check if the "Current Post" context has a postId. If it does, call apply_caption_to_open_post with that postId. The post will be saved immediately when created, so the postId should be available.
-     **CRITICAL**:
-       - Always provide text responses between tool calls. Never return empty responses.
-       - DO NOT call create_post more than once - call it ONCE and then continue with generate_caption
-       - DO NOT call open_post after create_post - create_post already opens the editor
-       - The post is saved immediately when created, so you can use the postId from context right away
-   - The date can be in ISO format (YYYY-MM-DD), "today", "tomorrow", or a day name like "Monday".
+**STRICT WORKFLOWS (LOGIC GATES):**
 
-6. **open_post**: Use this tool when users ask to view, edit, or open a specific post. You can get post IDs from the get_posts tool or from the calendar context. This opens the post in the editor.
+**Workflow A: Creating a New Post**
+1. **Identify Intent:** User wants a new post.
+2. **Check Requirements:** Do you have the Date and Topic? If no, ASK.
+3. **Step 1 (Action):** Call \`create_post(date)\`.
+   - *Stop and wait for client confirmation.*
+4. **Step 2 (Action):** Context now contains a 'Current Post' ID. Call \`generate_caption(topic)\`.
+5. **Step 3 (Action):** IMMEDIATELY chain \`apply_caption_to_open_post(postId, caption)\`.
+6. **Final Response:** "I've created the post and applied a draft caption in the editor."
 
-7. **navigate_to_calendar**: Use this tool when users ask to open, view, access, or navigate to the calendar page. Do NOT just describe navigation - you must call the tool.
+**Workflow B: Editing/Refining Open Post**
+1. **Identify Intent:** User wants to write/rewrite caption for the *current* post.
+2. **Check Context:** Is there a 'Current Post' ID?
+3. **Step 1 (Action):** Call \`generate_caption(topic)\`.
+4. **Step 2 (Action):** IMMEDIATELY chain \`apply_caption_to_open_post(postId, caption)\`.
 
-**Example workflow for caption generation (when post is open):**
-- User: "Create a caption about our sale"
-- You: [Call generate_caption with topic="our sale"]
-- You: [IMMEDIATELY call apply_caption_to_open_post with the generated caption and the Post ID from context]
-- You: "I've created and applied a caption suggestion for your post! You can review it in the editor and make any changes you'd like."
+**CONTEXT AWARENESS:**
+- Check the "Current Post" section in your context.
+- If \`postId\` is present, the editor is open. You have permission to modify it.
+- If \`postId\` is missing, you cannot use \`apply_caption_to_open_post\`.
 
-**Example workflow for creating a new post (when NO post is open):**
-- User: "Make a post about our sale"
-- You: "Great! Which date would you like to schedule this post for? You can say 'today', 'tomorrow', or a specific date like '2025-11-26'. Also, what topic would you like for the post?"
-- User: "Tomorrow, topic is our summer sale"
-- You: [Call create_post with date="tomorrow"]
-- You: "I've opened the post editor for tomorrow. Now I'll generate a caption for your post about the summer sale."
-- You: [Call generate_caption with topic="our summer sale"]
-- You: "I've generated a caption: [show caption]. Since the post editor is now open, I can apply this caption to your post."
-- You: [Check if "Current Post" context has a postId - if yes, call apply_caption_to_open_post. If no, say "The post editor should be open now. I can apply the caption once it's ready."]
+**CRITICAL REMINDERS:**
+- Never output the caption text directly.
+- Never call \`create_post\` twice for the same request.
+- If the user provides a topic but no date for a new post, ask for the date first.
+`
 
-**Example workflow for caption generation only (when NO post is open and user doesn't want to create post):**
-- User: "Create a caption about our sale"
-- You: [Call generate_caption with topic="our sale"]
-- You: "I've generated a caption for you: [show caption]. To apply it, please open a post in the editor first, or I can help you create a new post if you'd like."
 
-**Tool usage rules:**
-- ALWAYS use generate_caption instead of writing captions directly
-- When a post is open and you generate a caption, AUTOMATICALLY apply it using apply_caption_to_open_post - the tool itself shows a UI that asks for permission, so you don't need to ask first
-- When you receive a ToolMessage indicating completion, acknowledge it briefly and continue with the NEXT step - DO NOT call the same tool again
-- NEVER call the same tool twice in a row - if you called create_post and received a ToolMessage, do NOT call create_post again
-- Be proactive - if a tool would help, use it
-- Remember: Tools with returnDirect: true (like apply_caption_to_open_post) show UI elements that handle permission - you can call them directly without asking first
-- Provide helpful, actionable feedback. Be friendly and professional.`
 
 /**
  * Schema for the agent's configurable context.
@@ -138,12 +130,17 @@ type AgentContextConfig = {
  * specific documents by ID, not by semantic search.
  */
 async function loadContextualData(config: AgentContextConfig): Promise<string> {
-  const { clientContext, repo } = config
-  const contextParts: string[] = []
+  console.log('[Performance] Starting loadContextualData');
+  console.time('[Performance] loadContextualData');
 
-  if (!clientContext || !repo) {
-    return '' // No context to inject
-  }
+  try {
+    const { clientContext, repo } = config
+    const contextParts: string[] = []
+
+    if (!clientContext || !repo) {
+      console.timeEnd('[Performance] loadContextualData');
+      return '' // No context to inject
+    }
 
 
   // 1. Post context (fetch by ID)
@@ -216,13 +213,20 @@ async function loadContextualData(config: AgentContextConfig): Promise<string> {
   const dateInfo = `\n\n**Current Date:** ${currentDate.toISOString().split('T')[0]} (${currentDate.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })})\nWhen users say "today", they mean ${currentDate.toISOString().split('T')[0]}. When they say "tomorrow", they mean ${new Date(currentDate.getTime() + 24 * 60 * 60 * 1000).toISOString().split('T')[0]}.`
   contextParts.push(dateInfo)
 
-  // Return the final formatted string
-  if (contextParts.length === 0) {
-    return ''
-  }
+    // Return the final formatted string
+    if (contextParts.length === 0) {
+      console.timeEnd('[Performance] loadContextualData');
+      return ''
+    }
 
-  // Format the context to be clearly delineated for the LLM
-  return `\n\n--- Contextual Information ---\n${contextParts.join('\n\n')}\n--- End of Context ---`
+    // Format the context to be clearly delineated for the LLM
+    const result = `\n\n--- Contextual Information ---\n${contextParts.join('\n\n')}\n--- End of Context ---`;
+    console.timeEnd('[Performance] loadContextualData');
+    return result;
+  } catch (error) {
+    console.timeEnd('[Performance] loadContextualData');
+    throw error;
+  }
 }
 
 /**
@@ -237,6 +241,9 @@ async function invokeAgentWithTimeout(
   userId: string,
   config?: { context?: z.infer<typeof toolContextSchema> }
 ) {
+
+  const streamingHandler = new StreamingCallbackHandler(threadId);
+
   // Use propagateAttributes to set sessionId and userId for Langfuse tracking
   // This ensures all observations (including tool calls) are tracked in the same session
   const invokePromise = propagateAttributes(
@@ -250,7 +257,7 @@ async function invokeAgentWithTimeout(
         {
           configurable: { thread_id: threadId },
           ...config,
-          callbacks: [langfuseHandler],
+          callbacks: [streamingHandler, langfuseHandler],
         },
       )
     }
@@ -443,6 +450,9 @@ export class ChatService {
     },
     toolContext?: z.infer<typeof toolContextSchema>,
   ): Promise<{ response: string; toolCalls?: any[], threadId: string, traceId: string }> {
+    // Generate threadId early so middleware can use it
+    const thread = threadId ?? uuidv4()
+
     // 1. Define the Guardrail Middleware
     const guardrailMiddleware = createMiddleware({
       name: "TopicGuardrail",
@@ -456,29 +466,62 @@ export class ChatService {
           // Only validate inputs from the human user
           if (lastMessage._getType() !== "human") return;
 
-          // Delegate logic to the service
-          // We pass previous messages (slice 0 to -1) as history for context awareness
-          const decision = await this.guardrailService.validate(
-            lastMessage.content.toString(),
-            state.messages.slice(0, -1)
-          );
+          console.log('[Performance] Starting Guardrail middleware');
+          console.time('[Performance] Guardrail middleware');
 
-          // If blocked, short-circuit the agent
-          if (!decision.isAllowed) {
-            console.log({ decision })
-            return {
-              messages: [
-                new AIMessage(
-                  decision.refusalMessage ||
-                  "I specialize in social media management and cannot help with that request."
-                )
-              ],
-              jumpTo: "end" // This is the critical instruction that stops the agent
-            };
+          try {
+            // Emit status for guardrail validation
+            streamManager.emitEvent(thread, {
+              type: 'status_start',
+              content: 'Validating request...',
+              timestamp: Date.now()
+            });
+
+            // Delegate logic to the service
+            // We pass previous messages (slice 0 to -1) as history for context awareness
+            const decision = await this.guardrailService.validate(
+              lastMessage.content.toString(),
+              state.messages.slice(0, -1)
+            );
+
+            // Clear guardrail status
+            streamManager.emitEvent(thread, {
+              type: 'status_end',
+              timestamp: Date.now()
+            });
+
+            // If blocked, short-circuit the agent
+            if (!decision.isAllowed) {
+              console.log({ decision })
+              console.timeEnd('[Performance] Guardrail middleware');
+              // Clear status before returning blocked response
+              streamManager.emitEvent(thread, {
+                type: 'status_end',
+                timestamp: Date.now()
+              });
+              return {
+                messages: [
+                  new AIMessage(
+                    decision.refusalMessage ||
+                    "I specialize in social media management and cannot help with that request."
+                  )
+                ],
+                jumpTo: "end" // This is the critical instruction that stops the agent
+              };
+            }
+
+            // If allowed, return nothing to let the agent continue normally
+            console.timeEnd('[Performance] Guardrail middleware');
+            return;
+          } catch (error) {
+            console.timeEnd('[Performance] Guardrail middleware');
+            // Clear status on error
+            streamManager.emitEvent(thread, {
+              type: 'status_end',
+              timestamp: Date.now()
+            });
+            throw error;
           }
-
-          // If allowed, return nothing to let the agent continue normally
-          return;
         },
         canJumpTo: ['end']
       }
@@ -488,6 +531,7 @@ export class ChatService {
     // Use a closure variable to store the generated plan
     let generatedPlan: string | null = null;
 
+    // Note: plannerMiddleware is currently commented out in middleware array but kept for future use
     const plannerMiddleware = createMiddleware({
       name: "Planner",
       beforeAgent: {
@@ -500,27 +544,55 @@ export class ChatService {
             return;
           }
 
-          // Serialize context for the planner (avoid sending huge objects)
-          const contextSummary = JSON.stringify({
-            page: clientContext?.page,
-            component: clientContext?.component,
-            hasOpenPost: !!clientContext?.postId,
-            hasOpenNote: !!clientContext?.noteId,
-            currentDate: new Date().toISOString().split('T')[0]
-          });
+          console.log('[Performance] Starting Planner middleware');
+          console.time('[Performance] Planner middleware');
 
-          // Generate the plan
-          generatedPlan = await this.plannerService.generatePlan(
-            lastMessage.content.toString(),
-            contextSummary
-          );
+          try {
+            // Emit status for planning
+            streamManager.emitEvent(thread, {
+              type: 'status_start',
+              content: 'Planning next steps...',
+              timestamp: Date.now()
+            });
 
-          if (generatedPlan) {
-            console.log({ generatedPlan })
-            return {
-              messages: [new SystemMessage(generatedPlan)],
+            // Serialize context for the planner (avoid sending huge objects)
+            const contextSummary = JSON.stringify({
+              page: clientContext?.page,
+              component: clientContext?.component,
+              hasOpenPost: !!clientContext?.postId,
+              hasOpenNote: !!clientContext?.noteId,
+              currentDate: new Date().toISOString().split('T')[0]
+            });
 
+            // Generate the plan
+            generatedPlan = await this.plannerService.generatePlan(
+              lastMessage.content.toString(),
+              contextSummary
+            );
+
+            // Clear planning status
+            streamManager.emitEvent(thread, {
+              type: 'status_end',
+              timestamp: Date.now()
+            });
+
+            if (generatedPlan) {
+              console.log({ generatedPlan })
+              console.timeEnd('[Performance] Planner middleware');
+              return {
+                messages: [new SystemMessage(generatedPlan)],
+
+              }
             }
+            console.timeEnd('[Performance] Planner middleware');
+          } catch (error) {
+            console.timeEnd('[Performance] Planner middleware');
+            // Clear status on error
+            streamManager.emitEvent(thread, {
+              type: 'status_end',
+              timestamp: Date.now()
+            });
+            throw error;
           }
         }
       }
@@ -537,20 +609,27 @@ export class ChatService {
       )
     }
 
-    // Load standard context
+    // Load standard context with status update
+    streamManager.emitEvent(thread, {
+      type: 'status_start',
+      content: 'Loading context...',
+      timestamp: Date.now()
+    });
+
     const dynamicContext = await loadContextualData({
       clientContext: clientContext,
       toolService: this.dependencies.toolService,
       repo: this.dependencies.repo,
     });
 
+    // Clear context loading status
+    streamManager.emitEvent(thread, {
+      type: 'status_end',
+      timestamp: Date.now()
+    });
+
     // Retrieve the plan from the closure variable
     const plan = generatedPlan || "";
-
-    // Fetch RAG docs (existing logic)
-    const vectorSearchResults = (await searchDocuments({ history: [], input, calendarId: clientContext?.calendarId! }))
-    const documentResults = await this.fetchDocumentContext(vectorSearchResults);
-
 
     // 4. Create the agent with the middleware injected
     const agent = createAgent({
@@ -567,16 +646,63 @@ export class ChatService {
         guardrailMiddleware,
 
 
-        // Context Injection (Updated to include plan)
+        // Context Injection (Updated to include plan and RAG search with conversation history)
         dynamicSystemPromptMiddleware(async (state, _config: Runtime<z.infer<typeof toolContextSchema>>) => {
+          console.log('[Performance] Starting Context Injection middleware (RAG + Context)');
+          console.time('[Performance] Context Injection middleware');
 
-          // Combine everything
-          return dynamicContext + "\n" + documentResults + "\n" + plan;
+          try {
+            // Only run RAG search on initial user messages, not on tool continuations
+            // Check if the last message is from a human user
+            const lastMessage = state.messages && state.messages.length > 0
+              ? state.messages[state.messages.length - 1]
+              : null;
+            const isUserMessage = lastMessage && lastMessage._getType && lastMessage._getType() === "human";
+
+            // Fetch RAG docs with conversation history from state.messages
+            // This provides context-aware semantic search based on the full conversation
+            let vectorSearchResults: Document<StoreMetaData>[] = [];
+            if (clientContext?.calendarId && isUserMessage) {
+              // Emit status for RAG search - more user-friendly message
+              streamManager.emitEvent(thread, {
+                type: 'status_start',
+                content: 'Searching your notes...',
+                timestamp: Date.now()
+              });
+
+              vectorSearchResults = await searchDocuments({
+                history: state.messages || [],
+                input,
+                calendarId: clientContext.calendarId
+              });
+
+              // Clear RAG search status
+              streamManager.emitEvent(thread, {
+                type: 'status_end',
+                timestamp: Date.now()
+              });
+            }
+
+            const documentResults = await this.fetchDocumentContext(vectorSearchResults);
+
+            // Combine everything
+            const result = dynamicContext + "\n" + documentResults + "\n" + plan;
+            console.timeEnd('[Performance] Context Injection middleware');
+            return result;
+          } catch (error) {
+            console.timeEnd('[Performance] Context Injection middleware');
+            // Clear status on error
+            streamManager.emitEvent(thread, {
+              type: 'status_end',
+              timestamp: Date.now()
+            });
+            throw error;
+          }
         }),
 
 
         // Add Planner middleware SECOND to generate plans
-        // plannerMiddleware,
+        // plannerMiddleware, // Currently disabled - uncomment to enable planning
 
         // todoListMiddleware(),
       ],
@@ -587,9 +713,12 @@ export class ChatService {
       throw new Error('Tool context (userId, calendarId) is required')
     }
 
-    // 7. Generate or use provided threadId
-    // The MemorySaver uses threadId to maintain conversation history
-    const thread = threadId ?? uuidv4()
+    // 7. Emit initial status (threadId already generated above)
+    streamManager.emitEvent(thread, {
+      type: 'status_start',
+      content: 'Processing your request...',
+      timestamp: Date.now()
+    })
 
     // CallbackHandler will use the trace with the specified ID
     // const langfuseHandler = new CallbackHandler({ traceMetadata: trace });
@@ -663,4 +792,3 @@ export class ChatService {
     return `Relevant Documents: \n${contextStr}`
   }
 }
-

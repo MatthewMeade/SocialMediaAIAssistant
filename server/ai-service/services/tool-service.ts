@@ -77,21 +77,31 @@ export class ToolService {
   createGetPostsTool() {
     return tool(
       async (_input: {}, runtime: ToolRuntime<{}, typeof toolContextSchema>) => {
-        const context = runtime.context
-        if (!context) {
-          throw new Error('Context is required')
-        }
+        console.log('[Performance] Starting tool: get_posts');
+        console.time('[Performance] tool: get_posts');
+        
+        try {
+          const context = runtime.context
+          if (!context) {
+            throw new Error('Context is required')
+          }
 
-        // Repository handles auth internally
-        const posts = await this.dependencies.repo.getPosts()
-        // Return a simplified representation for the AI
-        return posts.map((p) => ({
-          id: p.id,
-          caption: p.caption,
-          date: p.date.toISOString(),
-          platform: p.platform,
-          status: p.status,
-        }))
+          // Repository handles auth internally
+          const posts = await this.dependencies.repo.getPosts()
+          // Return a simplified representation for the AI
+          const result = posts.map((p) => ({
+            id: p.id,
+            caption: p.caption,
+            date: p.date.toISOString(),
+            platform: p.platform,
+            status: p.status,
+          }))
+          console.timeEnd('[Performance] tool: get_posts');
+          return result;
+        } catch (error) {
+          console.timeEnd('[Performance] tool: get_posts');
+          throw error;
+        }
       },
       {
         name: 'get_posts',
@@ -109,32 +119,44 @@ export class ToolService {
   createGetCurrentPostTool(postId?: string) {
     return tool(
       async (_input: {}, runtime: ToolRuntime<{}, typeof toolContextSchema>) => {
-        const context = runtime.context
-        if (!context) {
-          throw new Error('Context is required')
-        }
+        console.log('[Performance] Starting tool: get_current_post');
+        console.time('[Performance] tool: get_current_post');
+        
+        try {
+          const context = runtime.context
+          if (!context) {
+            throw new Error('Context is required')
+          }
 
-        // Use provided postId or try to get from context if available
-        const targetPostId = postId
-        if (!targetPostId) {
-          return { error: 'No post ID provided' }
-        }
+          // Use provided postId or try to get from context if available
+          const targetPostId = postId
+          if (!targetPostId) {
+            console.timeEnd('[Performance] tool: get_current_post');
+            return { error: 'No post ID provided' }
+          }
 
-        // Repository handles auth and verifies post belongs to calendar
-        const post = await this.dependencies.repo.getPost(targetPostId)
-        if (!post) {
-          return { error: 'Post not found' }
-        }
+          // Repository handles auth and verifies post belongs to calendar
+          const post = await this.dependencies.repo.getPost(targetPostId)
+          if (!post) {
+            console.timeEnd('[Performance] tool: get_current_post');
+            return { error: 'Post not found' }
+          }
 
-        // Return full post details for the AI
-        return {
-          id: post.id,
-          caption: post.caption,
-          date: post.date.toISOString(),
-          platform: post.platform,
-          status: post.status,
-          images: post.images,
-          authorName: post.authorName,
+          // Return full post details for the AI
+          const result = {
+            id: post.id,
+            caption: post.caption,
+            date: post.date.toISOString(),
+            platform: post.platform,
+            status: post.status,
+            images: post.images,
+            authorName: post.authorName,
+          }
+          console.timeEnd('[Performance] tool: get_current_post');
+          return result;
+        } catch (error) {
+          console.timeEnd('[Performance] tool: get_current_post');
+          throw error;
         }
       },
       {
@@ -159,29 +181,39 @@ export class ToolService {
         },
         runtime: ToolRuntime<{}, typeof toolContextSchema>,
       ) => {
-        const context = runtime.context
-        if (!context) {
-          throw new Error('Context is required')
-        }
+        console.log('[Performance] Starting tool: generate_caption');
+        console.time('[Performance] tool: generate_caption');
+        
+        try {
+          const context = runtime.context
+          if (!context) {
+            throw new Error('Context is required')
+          }
 
-        // Repository handles auth internally
-        const brandRules = await this.dependencies.repo.getBrandRules()
+          // Repository handles auth internally
+          const brandRules = await this.dependencies.repo.getBrandRules()
 
-        const result = await generateCaptions(
-          {
-            topic: input.topic,
-            existingCaption: input.existingCaption,
-          },
-          brandRules,
-          this.dependencies.creativeModel,
-          (caption, rules) =>
-            getBrandVoiceScore(caption, rules, this.dependencies.chatModel),
-        )
+          const result = await generateCaptions(
+            {
+              topic: input.topic,
+              existingCaption: input.existingCaption,
+            },
+            brandRules,
+            this.dependencies.creativeModel,
+            (caption, rules) =>
+              getBrandVoiceScore(caption, rules, this.dependencies.chatModel),
+          )
 
-        return {
-          caption: result.caption,
-          score: result.score?.overall ?? null,
-          suggestions: result.score?.suggestions ?? [],
+          const toolResult = {
+            caption: result.caption,
+            score: result.score?.overall ?? null,
+            suggestions: result.score?.suggestions ?? [],
+          }
+          console.timeEnd('[Performance] tool: generate_caption');
+          return toolResult;
+        } catch (error) {
+          console.timeEnd('[Performance] tool: generate_caption');
+          throw error;
         }
       },
       {
@@ -210,20 +242,30 @@ export class ToolService {
         input: { postId: string; caption: string },
         runtime: ToolRuntime<{}, typeof toolContextSchema>,
       ) => {
-        const context = runtime.context
-        if (!context) {
-          throw new Error('Context is required')
-        }
+        console.log('[Performance] Starting tool: apply_caption_to_open_post');
+        console.time('[Performance] tool: apply_caption_to_open_post');
+        
+        try {
+          const context = runtime.context
+          if (!context) {
+            throw new Error('Context is required')
+          }
 
-        // Repository handles auth and verifies post belongs to calendar
-        const post = await this.dependencies.repo.getPost(input.postId)
-        if (!post) {
-          throw new Error('Post not found')
-        }
+          // Repository handles auth and verifies post belongs to calendar
+          const post = await this.dependencies.repo.getPost(input.postId)
+          if (!post) {
+            throw new Error('Post not found')
+          }
 
-        // This is a suggestion tool - the actual write happens on the client
-        // We just return a message that the client will handle
-        return `Caption suggestion ready for post ${input.postId}. The client will apply this change.`
+          // This is a suggestion tool - the actual write happens on the client
+          // We just return a message that the client will handle
+          const result = `Caption suggestion ready for post ${input.postId}. The client will apply this change.`;
+          console.timeEnd('[Performance] tool: apply_caption_to_open_post');
+          return result;
+        } catch (error) {
+          console.timeEnd('[Performance] tool: apply_caption_to_open_post');
+          throw error;
+        }
       },
       {
         name: 'apply_caption_to_open_post',
@@ -248,13 +290,23 @@ export class ToolService {
         input: { page?: string; label?: string },
         runtime: ToolRuntime<{}, typeof toolContextSchema>,
       ) => {
-        // Verify context exists (no auth needed for navigation)
-        if (!runtime.context) {
-          throw new Error('Context is required')
-        }
+        console.log('[Performance] Starting tool: navigate_to_calendar');
+        console.time('[Performance] tool: navigate_to_calendar');
+        
+        try {
+          // Verify context exists (no auth needed for navigation)
+          if (!runtime.context) {
+            throw new Error('Context is required')
+          }
 
-        // This is a client-side tool - the actual navigation happens on the client
-        return `Navigation requested to ${input.page || 'calendar'}. The client will handle this.`
+          // This is a client-side tool - the actual navigation happens on the client
+          const result = `Navigation requested to ${input.page || 'calendar'}. The client will handle this.`;
+          console.timeEnd('[Performance] tool: navigate_to_calendar');
+          return result;
+        } catch (error) {
+          console.timeEnd('[Performance] tool: navigate_to_calendar');
+          throw error;
+        }
       },
       {
         name: 'navigate_to_calendar',
@@ -279,29 +331,41 @@ export class ToolService {
   createGetBrandRulesTool() {
     return tool(
       async (_input: {}, runtime: ToolRuntime<{}, typeof toolContextSchema>) => {
-        const context = runtime.context
-        if (!context) {
-          throw new Error('Context is required')
-        }
-
-        // Repository handles auth internally
-        const rules = await this.dependencies.repo.getBrandRules()
-        const enabledRules = rules.filter((r) => r.enabled)
+        console.log('[Performance] Starting tool: get_brand_rules');
+        console.time('[Performance] tool: get_brand_rules');
         
-        if (enabledRules.length === 0) {
-          return {
-            message: 'No active brand voice rules are configured.',
-            rules: [],
+        try {
+          const context = runtime.context
+          if (!context) {
+            throw new Error('Context is required')
           }
-        }
 
-        return {
-          rules: enabledRules.map((r) => ({
-            id: r.id,
-            title: r.title,
-            description: r.description,
-          })),
-          total: enabledRules.length,
+          // Repository handles auth internally
+          const rules = await this.dependencies.repo.getBrandRules()
+          const enabledRules = rules.filter((r) => r.enabled)
+          
+          if (enabledRules.length === 0) {
+            const result = {
+              message: 'No active brand voice rules are configured.',
+              rules: [],
+            }
+            console.timeEnd('[Performance] tool: get_brand_rules');
+            return result;
+          }
+
+          const result = {
+            rules: enabledRules.map((r) => ({
+              id: r.id,
+              title: r.title,
+              description: r.description,
+            })),
+            total: enabledRules.length,
+          }
+          console.timeEnd('[Performance] tool: get_brand_rules');
+          return result;
+        } catch (error) {
+          console.timeEnd('[Performance] tool: get_brand_rules');
+          throw error;
         }
       },
       {
@@ -323,25 +387,35 @@ export class ToolService {
         input: { caption: string },
         runtime: ToolRuntime<{}, typeof toolContextSchema>,
       ) => {
-        const context = runtime.context
-        if (!context) {
-          throw new Error('Context is required')
-        }
+        console.log('[Performance] Starting tool: grade_caption');
+        console.time('[Performance] tool: grade_caption');
+        
+        try {
+          const context = runtime.context
+          if (!context) {
+            throw new Error('Context is required')
+          }
 
-        // Repository handles auth internally
-        const brandRules = await this.dependencies.repo.getBrandRules()
+          // Repository handles auth internally
+          const brandRules = await this.dependencies.repo.getBrandRules()
 
-        const score = await getBrandVoiceScore(
-          input.caption,
-          brandRules,
-          this.dependencies.chatModel,
-        )
+          const score = await getBrandVoiceScore(
+            input.caption,
+            brandRules,
+            this.dependencies.chatModel,
+          )
 
-        return {
-          overall: score.overall,
-          rules: score.rules,
-          suggestions: score.suggestions,
-          message: `Caption scored ${score.overall}/100. ${score.suggestions.length} suggestion(s) provided.`,
+          const result = {
+            overall: score.overall,
+            rules: score.rules,
+            suggestions: score.suggestions,
+            message: `Caption scored ${score.overall}/100. ${score.suggestions.length} suggestion(s) provided.`,
+          }
+          console.timeEnd('[Performance] tool: grade_caption');
+          return result;
+        } catch (error) {
+          console.timeEnd('[Performance] tool: grade_caption');
+          throw error;
         }
       },
       {
@@ -365,13 +439,23 @@ export class ToolService {
         input: { date: string; label?: string },
         runtime: ToolRuntime<{}, typeof toolContextSchema>,
       ) => {
-        // Verify context exists (no auth needed for client-side tool)
-        if (!runtime.context) {
-          throw new Error('Context is required')
-        }
+        console.log('[Performance] Starting tool: create_post');
+        console.time('[Performance] tool: create_post');
+        
+        try {
+          // Verify context exists (no auth needed for client-side tool)
+          if (!runtime.context) {
+            throw new Error('Context is required')
+          }
 
-        // This is a client-side tool - the actual post creation happens on the client
-        return `Post creation requested for ${input.date}. The client will open the post editor.`
+          // This is a client-side tool - the actual post creation happens on the client
+          const result = `Post creation requested for ${input.date}. The client will open the post editor.`;
+          console.timeEnd('[Performance] tool: create_post');
+          return result;
+        } catch (error) {
+          console.timeEnd('[Performance] tool: create_post');
+          throw error;
+        }
       },
       {
         name: 'create_post',
@@ -403,19 +487,29 @@ export class ToolService {
         input: { postId: string; label?: string },
         runtime: ToolRuntime<{}, typeof toolContextSchema>,
       ) => {
-        const context = runtime.context
-        if (!context) {
-          throw new Error('Context is required')
-        }
+        console.log('[Performance] Starting tool: open_post');
+        console.time('[Performance] tool: open_post');
+        
+        try {
+          const context = runtime.context
+          if (!context) {
+            throw new Error('Context is required')
+          }
 
-        // Repository handles auth and verifies post belongs to calendar
-        const post = await this.dependencies.repo.getPost(input.postId)
-        if (!post) {
-          throw new Error('Post not found')
-        }
+          // Repository handles auth and verifies post belongs to calendar
+          const post = await this.dependencies.repo.getPost(input.postId)
+          if (!post) {
+            throw new Error('Post not found')
+          }
 
-        // This is a client-side tool - the actual navigation happens on the client
-        return `Open post requested for ${input.postId}. The client will open the post editor.`
+          // This is a client-side tool - the actual navigation happens on the client
+          const result = `Open post requested for ${input.postId}. The client will open the post editor.`;
+          console.timeEnd('[Performance] tool: open_post');
+          return result;
+        } catch (error) {
+          console.timeEnd('[Performance] tool: open_post');
+          throw error;
+        }
       },
       {
         name: 'open_post',

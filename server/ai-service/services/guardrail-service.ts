@@ -35,6 +35,9 @@ export class GuardrailService {
    * Returns a structured decision object.
    */
   async validate(input: string, history: BaseMessage[] = []): Promise<GuardrailDecision> {
+    console.log('[Performance] Starting GuardrailService.validate');
+    console.time('[Performance] GuardrailService.validate');
+    
     try {
       // 1. Fetch managed prompt from Langfuse
       const promptTemplate = await getPrompt(Prompt.Guardrail);
@@ -47,7 +50,7 @@ export class GuardrailService {
       );
 
       // 3. Execute with Langfuse tracing
-      return await chain.invoke(
+      const result = await chain.invoke(
         {
           input,
           history: this.formatHistory(history),
@@ -57,7 +60,11 @@ export class GuardrailService {
           runName: "Guardrail Evaluation"
         }
       );
+      
+      console.timeEnd('[Performance] GuardrailService.validate');
+      return result;
     } catch (error) {
+      console.timeEnd('[Performance] GuardrailService.validate');
       console.error("[GuardrailService] Validation failed:", error);
       // Fail Open: If the guardrail service errors (e.g., network issue), 
       // we default to allowing the request rather than blocking the user entirely.

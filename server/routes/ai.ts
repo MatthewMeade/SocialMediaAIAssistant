@@ -1,4 +1,5 @@
 import { Hono } from 'hono'
+import { streamSSE } from 'hono/streaming'
 import type { User } from '@supabase/supabase-js'
 import { requireAuth, isUser } from '../lib/auth'
 import { LocalDataRepository } from '../ai-service/repository'
@@ -8,6 +9,7 @@ import { chatModel, creativeModel, imageGenerator } from '../ai-service/models'
 import { generateAndStoreImage } from '../ai-service/services/image-generation-service'
 import { getBrandVoiceScore } from '../ai-service/services/grading-service'
 import { generateCaptions, extractBrandRules } from '../ai-service/services/generation-service'
+import { streamManager } from '../ai-service/stream-manager'
 import type {
   CaptionGenerationRequest,
   ApplySuggestionsRequest,
@@ -24,6 +26,43 @@ const app = new Hono<{ Variables: Variables }>()
 app.use('*', requireAuth)
 
 /**
+ * SSE Stream endpoint for real-time chat updates.
+ * Client connects to this before sending POST /chat request.
+ */
+app.get('/stream/:threadId', (c) => {
+  const threadId = c.req.param('threadId')
+
+  return streamSSE(c, async (stream) => {
+    // 1. Confirm connection
+    await stream.writeSSE({
+      data: JSON.stringify({ type: 'connected' }),
+      event: 'connected',
+    })
+
+    // 2. Subscribe to events for this thread
+    const unsubscribe = streamManager.subscribe(threadId, async (payload) => {
+      await stream.writeSSE({
+        data: JSON.stringify(payload),
+        event: 'message',
+      })
+    })
+
+    // 3. Keep connection alive
+    let isOpen = true
+    stream.onAbort(() => { 
+      isOpen = false
+      unsubscribe()
+    })
+    
+    while (isOpen) {
+      await stream.sleep(1000)
+    }
+    
+    unsubscribe()
+  })
+})
+
+/**
  * Endpoint for the Brand Voice Content Grader tool.
  */
 app.post('/grade-caption', async (c) => {
@@ -33,7 +72,7 @@ app.post('/grade-caption', async (c) => {
   }
   const user = authResult
 
-  const { caption, calendarId } = await c.req.json()
+  const { caption, calendarId } = await c.req.json() as { caption: string; calendarId: string }
 
   if (typeof caption !== 'string' || !calendarId) {
     return c.json({ error: 'caption and calendarId are required' }, 400)
@@ -46,7 +85,7 @@ app.post('/grade-caption', async (c) => {
     // Get brand rules and grade the caption
     const brandRules = await repo.getBrandRules()
     const score = await getBrandVoiceScore(
-      caption,
+      caption as string,
       brandRules,
       chatModel,
     )
