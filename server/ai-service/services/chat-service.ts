@@ -36,67 +36,56 @@ export interface ChatServiceDependencies {
   imageGenerator: DallEAPIWrapper
 }
 
-/**
- * System prompt for the social media content assistant.
- */
 const systemPrompt = `You are an expert AI assistant for social media content management.
 
 **CORE DIRECTIVE: NO PLAIN TEXT CAPTIONS**
 You are FORBIDDEN from outputting a generated caption as plain text in the chat. 
-- If you generate a caption, you MUST apply it to the editor immediately using the 'apply_caption_to_open_post' tool.
-- If you cannot apply it (no post is open), you must ask the user to open a post first.
-- **Failure condition:** If your response contains a hashtag or a full caption in the text body, you have failed.
+- If you generate a caption (new or refined), you MUST apply it to the editor using 'apply_caption_to_open_post'.
+- **Failure condition:** If your response contains a hashtag or a full caption body text, you have failed.
 
-**PLANNING INSTRUCTION:**
-If a **CURRENT PLAN** is provided in the context below, follow it strictly.
+**STATE DETECTION (CRITICAL):**
+Check your Context for "Current Post".
+- **IF A POST ID IS PRESENT:** You are in **EDITOR MODE**. The editor is ALREADY open.
+  - **NEVER** ask the user to open the post.
+  - **NEVER** call 'open_post' or 'create_post' for the current post.
+  - **ALWAYS** assume you have permission to modify the current post.
+- **IF NO POST ID:** You are in **DASHBOARD MODE**.
+  - You must ask the user to create or open a post before generating content.
 
 **TOOL USAGE PROTOCOL:**
 
 1. **generate_caption**
-   - **Trigger:** User asks to write/create/generate content.
-   - **Input:** Extract the specific topic.
-   - **Output:** This tool returns raw data. Do NOT show this data to the user. Pass it to the 'apply' tool.
+   - **Input:** Topic, tone, or "refine current caption based on [feedback]".
+   - **Output:** Internal data only. Pass to 'apply' tool.
 
-2. **create_post** (Client Action)
-   - **Trigger:** User wants to make/schedule a new post.
-   - **Required Info:** Date (ISO, "today", "tomorrow") AND Topic.
-   - **Action:** Call this ONCE to open the editor.
-   - **Next Step:** Wait for the tool result to confirm the editor is open before generating the caption.
+2. **apply_caption_to_open_post** (Client Action)
+   - **Trigger:** You have generated text AND you are in **EDITOR MODE**.
+   - **Action:** Call this immediately.
+   - **Note:** This tool IS the way you "show" the caption to the user.
 
-3. **apply_caption_to_open_post** (Client Action)
-   - **Trigger:** You have a generated caption AND a post is open (Context: postId exists).
-   - **Action:** Call this immediately after 'generate_caption'.
-   - **Permission:** Do NOT ask for confirmation. The tool handles the UI permission request.
+3. **create_post** (Client Action)
+   - **Trigger:** User wants a NEW post and you are in DASHBOARD MODE.
+   - **Action:** Call once. Wait for client context update before generating caption.
 
-4. **get_posts**, **open_post**, **grade_caption**, **navigate_to_calendar**
-   - Use these standard tools for retrieval, navigation, and grading tasks.
+**LOGIC GATES (Follow Strictly):**
 
-**STRICT WORKFLOWS (LOGIC GATES):**
+**SCENARIO A: User asks to Edit/Refine/Rewrite (EDITOR MODE)**
+*Condition: Context contains "Current Post ID"*
+1. **Identify Intent:** User wants to change the text (e.g., "make it shorter", "add emojis", "rewrite about sales").
+2. **Action 1:** Call \`generate_caption(topic/instructions)\`.
+3. **Action 2:** IMMEDIATELY chain \`apply_caption_to_open_post(postId, caption)\`.
+4. **Response:** "I've updated the caption with your changes."
 
-**Workflow A: Creating a New Post**
+**SCENARIO B: User asks to Create New Post (DASHBOARD MODE)**
+*Condition: Context does NOT contain "Current Post ID"*
 1. **Identify Intent:** User wants a new post.
-2. **Check Requirements:** Do you have the Date and Topic? If no, ASK.
-3. **Step 1 (Action):** Call \`create_post(date)\`.
-   - *Stop and wait for client confirmation.*
-4. **Step 2 (Action):** Context now contains a 'Current Post' ID. Call \`generate_caption(topic)\`.
-5. **Step 3 (Action):** IMMEDIATELY chain \`apply_caption_to_open_post(postId, caption)\`.
-6. **Final Response:** "I've created the post and applied a draft caption in the editor."
+2. **Check Requirements:** Ask for Date and Topic if missing.
+3. **Action:** Call \`create_post(date)\`.
+4. **Stop:** Wait for the tool result to confirm the editor is open.
 
-**Workflow B: Editing/Refining Open Post**
-1. **Identify Intent:** User wants to write/rewrite caption for the *current* post.
-2. **Check Context:** Is there a 'Current Post' ID?
-3. **Step 1 (Action):** Call \`generate_caption(topic)\`.
-4. **Step 2 (Action):** IMMEDIATELY chain \`apply_caption_to_open_post(postId, caption)\`.
-
-**CONTEXT AWARENESS:**
-- Check the "Current Post" section in your context.
-- If \`postId\` is present, the editor is open. You have permission to modify it.
-- If \`postId\` is missing, you cannot use \`apply_caption_to_open_post\`.
-
-**CRITICAL REMINDERS:**
-- Never output the caption text directly.
-- Never call \`create_post\` twice for the same request.
-- If the user provides a topic but no date for a new post, ask for the date first.
+**SCENARIO C: User asks to Create New Post (EDITOR MODE)**
+*Condition: Context contains "Current Post ID" but user says "New Post"*
+1. **Response:** "You currently have a post open. Do you want to modify this one, or close it to create a new one?"
 `
 
 
@@ -143,75 +132,82 @@ async function loadContextualData(config: AgentContextConfig): Promise<string> {
     }
 
 
-  // 1. Post context (fetch by ID)
-  if (clientContext.postId) {
-    try {
-      const post = await repo.getPost(clientContext.postId)
-      if (post) {
-        contextParts.push(
-          `**Current Post:**\nThe user is currently viewing/editing a post:\n- Post ID: ${post.id}\n- Caption: ${post.caption || '(No caption yet)'}\n- Platform: ${post.platform}\n- Status: ${post.status}\n- Date: ${post.date.toISOString().split('T')[0]}\n- Images: ${post.images.length} image(s)\n\nWhen the user asks about "this post" or "the current post", they are referring to this post. When using the apply_caption_to_open_post tool, you MUST use Post ID: ${post.id} as the postId parameter.`,
-        )
-      }
-    } catch (error) {
-      console.error('[ContextLoader] Error fetching post:', error)
-    }
-  }
-
-  // 1b. Note context (fetch by ID)
-  if (clientContext.noteId) {
-    try {
-      const note = await repo.getNote(clientContext.noteId)
-      if (note) {
-        // Extract text content from Slate JSON for context
-        const extractText = (content: any): string => {
-          if (!content || !Array.isArray(content)) return ''
-          return content
-            .map((node: any) => {
-              if (node.children) {
-                return node.children
-                  .map((child: any) => child.text || '')
-                  .join('')
-              }
-              return ''
-            })
-            .join('\n')
-            .trim()
+    // 1. Post context (fetch by ID)
+    if (clientContext.postId) {
+      try {
+        const post = await repo.getPost(clientContext.postId)
+        if (post) {
+          // CHANGE: Make the header aggressive and explicit
+          contextParts.push(
+            `*** ACTIVE EDITOR SESSION (POST IS OPEN) ***\n` +
+            `- STATUS: The post editor is currently OPEN on the user's screen.\n` +
+            `- Post ID: ${post.id}\n` +
+            `- Current Caption: ${post.caption || '(No caption yet)'}\n` +
+            `- Platform: ${post.platform}\n` +
+            `- Date: ${post.date.toISOString().split('T')[0]}\n\n` +
+            `INSTRUCTION: Since the session is active, do NOT ask the user to open the post. You can use 'apply_caption_to_open_post' immediately.`
+          )
         }
-        const noteText = extractText(note.content)
+      } catch (error) {
+        console.error('[ContextLoader] Error fetching post:', error)
+      }
+    }
+
+    // 1b. Note context (fetch by ID)
+    if (clientContext.noteId) {
+      try {
+        const note = await repo.getNote(clientContext.noteId)
+        if (note) {
+          // Extract text content from Slate JSON for context
+          const extractText = (content: any): string => {
+            if (!content || !Array.isArray(content)) return ''
+            return content
+              .map((node: any) => {
+                if (node.children) {
+                  return node.children
+                    .map((child: any) => child.text || '')
+                    .join('')
+                }
+                return ''
+              })
+              .join('\n')
+              .trim()
+          }
+          const noteText = extractText(note.content)
+          contextParts.push(
+            `**Current Note:**\nThe user is currently viewing/editing a note:\n- Note ID: ${note.id}\n- Title: ${note.title}\n- Content: ${noteText || '(Empty note)'}\n\nWhen the user asks about "this note" or "the current note", they are referring to this note.`,
+          )
+        }
+      } catch (error) {
+        console.error('[ContextLoader] Error fetching note:', error)
+      }
+    }
+
+    // 2. Brand Voice context (fetch all for calendar)
+    // Repository is already scoped to a specific calendarId, so we can fetch brand rules directly
+    try {
+      const brandRules = await repo.getBrandRules()
+      const enabledRules = brandRules.filter((r) => r.enabled)
+      if (enabledRules.length > 0) {
+        const rulesText = enabledRules
+          .map((r) => `- **${r.title}:** ${r.description}`)
+          .join('\n')
         contextParts.push(
-          `**Current Note:**\nThe user is currently viewing/editing a note:\n- Note ID: ${note.id}\n- Title: ${note.title}\n- Content: ${noteText || '(Empty note)'}\n\nWhen the user asks about "this note" or "the current note", they are referring to this note.`,
+          `**Brand Voice Rules:**\nThe following brand voice rules are active for this calendar:\n${rulesText}\n\nAlways follow these rules when generating or suggesting content. When grading content, evaluate it against these rules.`,
+        )
+      } else {
+        contextParts.push(
+          '**Brand Voice Rules:**\nNo active brand voice rules are currently configured for this calendar.',
         )
       }
     } catch (error) {
-      console.error('[ContextLoader] Error fetching note:', error)
+      console.error('[ContextLoader] Error fetching brand rules:', error)
     }
-  }
 
-  // 2. Brand Voice context (fetch all for calendar)
-  // Repository is already scoped to a specific calendarId, so we can fetch brand rules directly
-  try {
-    const brandRules = await repo.getBrandRules()
-    const enabledRules = brandRules.filter((r) => r.enabled)
-    if (enabledRules.length > 0) {
-      const rulesText = enabledRules
-        .map((r) => `- **${r.title}:** ${r.description}`)
-        .join('\n')
-      contextParts.push(
-        `**Brand Voice Rules:**\nThe following brand voice rules are active for this calendar:\n${rulesText}\n\nAlways follow these rules when generating or suggesting content. When grading content, evaluate it against these rules.`,
-      )
-    } else {
-      contextParts.push(
-        '**Brand Voice Rules:**\nNo active brand voice rules are currently configured for this calendar.',
-      )
-    }
-  } catch (error) {
-    console.error('[ContextLoader] Error fetching brand rules:', error)
-  }
-
-  // 3. Add current date context
-  const currentDate = new Date()
-  const dateInfo = `\n\n**Current Date:** ${currentDate.toISOString().split('T')[0]} (${currentDate.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })})\nWhen users say "today", they mean ${currentDate.toISOString().split('T')[0]}. When they say "tomorrow", they mean ${new Date(currentDate.getTime() + 24 * 60 * 60 * 1000).toISOString().split('T')[0]}.`
-  contextParts.push(dateInfo)
+    // 3. Add current date context
+    const currentDate = new Date()
+    const dateInfo = `\n\n**Current Date:** ${currentDate.toISOString().split('T')[0]} (${currentDate.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })})\nWhen users say "today", they mean ${currentDate.toISOString().split('T')[0]}. When they say "tomorrow", they mean ${new Date(currentDate.getTime() + 24 * 60 * 60 * 1000).toISOString().split('T')[0]}.`
+    contextParts.push(dateInfo)
 
     // Return the final formatted string
     if (contextParts.length === 0) {
