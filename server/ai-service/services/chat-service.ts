@@ -19,6 +19,8 @@ import { langfuseHandler } from '../../lib/langfuse'
 import { StreamingCallbackHandler } from '../streaming-callback'
 import { streamManager } from '../stream-manager'
 
+const USE_GUARDRAILS = false
+
 export interface ChatServiceDependencies {
   repo: IAiDataRepository
   toolService: ToolService
@@ -461,7 +463,7 @@ export class ChatService {
       contextSchema: toolContextSchema,
       checkpointer: this.memoryStore,
       middleware: [
-        guardrailMiddleware,
+        USE_GUARDRAILS ? guardrailMiddleware : () => { },
         dynamicSystemPromptMiddleware(async (state, _config: Runtime<z.infer<typeof toolContextSchema>>) => {
           try {
             const lastMessage = state.messages && state.messages.length > 0
