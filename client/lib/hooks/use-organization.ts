@@ -1,14 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
-
 import type { Organization } from "@/lib/types"
-
 import { apiGet, apiPost, apiDelete } from "@/lib/api-client"
-
 import { ApiRoutes } from "@/lib/api-routes"
-
-
-
-// The API returns dates as strings
 
 type ApiOrganization = Omit<Organization, "createdAt"> & { createdAt: string }
 
@@ -76,8 +69,7 @@ export function useOrganization() {
 
     },
 
-    enabled: !!orgQuery.data?.id, // Only fetch members if we have the org
-
+    enabled: !!orgQuery.data?.id,
   })
 
 

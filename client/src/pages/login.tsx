@@ -18,10 +18,8 @@ export default function LoginPage() {
   const { user, isLoading: authLoading } = useAuth()
   const navigate = useNavigate()
 
-  // Redirect if already logged in
   useEffect(() => {
     if (!authLoading && user) {
-      // User is already logged in, fetch calendars and redirect
       apiGet<Array<{ id: string; name: string; slug: string; color: string; createdAt: string }>>(
         ApiRoutes.CALENDARS
       )
@@ -33,7 +31,6 @@ export default function LoginPage() {
           }
         })
         .catch(() => {
-          // If fetching calendars fails, just navigate to a default route
           navigate("/default/settings", { replace: true })
         })
     }
@@ -45,7 +42,6 @@ export default function LoginPage() {
     setError(null)
 
     try {
-      // Sign in - this will update the session
       const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
         email,
         password,
@@ -59,26 +55,21 @@ export default function LoginPage() {
         throw new Error("No session returned from sign in")
       }
 
-      // Wait a brief moment for the session to be persisted
       await new Promise((resolve) => setTimeout(resolve, 100))
 
-      // Verify session is available
       const { data: { session }, error: sessionError } = await supabase.auth.getSession()
       
       if (sessionError || !session) {
         throw new Error("Failed to establish session")
       }
 
-      // Fetch user's calendars
       const calendars = await apiGet<Array<{ id: string; name: string; slug: string; color: string; createdAt: string }>>(
         ApiRoutes.CALENDARS
       )
 
-      // Navigate to the first calendar, or to a default route if no calendars exist
       if (calendars && calendars.length > 0) {
         navigate(`/${calendars[0].slug}/calendar`, { replace: true })
       } else {
-        // If no calendars, navigate to settings to create one
         navigate("/default/settings", { replace: true })
       }
     } catch (error: any) {

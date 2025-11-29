@@ -11,7 +11,7 @@ export async function getNoteById(noteId: string): Promise<Note | null> {
     .single()
 
   if (error || !data) {
-    console.error("[v0] Error loading note:", error)
+    console.error("Error loading note:", error)
     return null
   }
 

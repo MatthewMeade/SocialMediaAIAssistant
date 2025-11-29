@@ -33,7 +33,7 @@ export interface CalendarMember {
 
 export interface Post {
   id: string
-  calendarId: string // Added calendar scope
+  calendarId: string
   date: Date
   caption: string
   images: string[]
@@ -61,17 +61,17 @@ export interface Comment {
 
 export interface BrandRule {
   id: string
-  calendarId: string // Added calendar scope
+  calendarId: string
   title: string
   description: string
   enabled: boolean
 }
 
 export interface BrandScore {
-  overall: number // 0-100
+  overall: number
   rules: {
     ruleId: string
-    score: number // 0-100
+    score: number
     feedback: string
   }[]
   suggestions: string[]
@@ -101,7 +101,7 @@ export interface Note {
   id: string
   calendarId: string
   title: string
-  content: any // Slate JSON content
+  content: any
   createdAt: Date
   updatedAt: Date
 }

@@ -11,8 +11,6 @@ export default function SettingsPage() {
   }
 
   if (!organization) {
-    // This could be a state where a user has no org yet
-    // For now, we'll show loading, but you could show a "Create Organization" view
     return <div>No organization found.</div>
   }
 

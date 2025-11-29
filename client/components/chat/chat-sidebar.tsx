@@ -23,11 +23,10 @@ interface Message {
   toolCalls?: ToolCall[]
   tool_call_id?: string
   name?: string
-  traceId?: string // Add traceId
-  feedbackStatus?: "submitted" | null // Track local status
+  traceId?: string
+  feedbackStatus?: "submitted" | null
 }
 
-// Discriminated union for different tool call types
 type ToolCall =
   | {
     id: string
@@ -70,16 +69,14 @@ type ToolCall =
 interface ChatSidebarProps {
   isOpen: boolean
   onClose: () => void
-  // No calendarId prop needed - it comes from context
 }
 
-// Custom UI components for different tool types
 interface ToolCallUIProps {
   toolCall: ToolCall
   isExecuted: boolean
   isLoading: boolean
   onExecute: (toolCall: ToolCall) => void
-  aiMessage?: string // Optional AI message to display before the tool call
+  aiMessage?: string
 }
 
 function CaptionSuggestionCard({ toolCall, isExecuted, isLoading, onExecute }: ToolCallUIProps) {
@@ -173,8 +170,8 @@ function CreatePostCard({ toolCall, isExecuted, isLoading, onExecute }: ToolCall
       if (!isNaN(d.getTime())) {
         return d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })
       }
-    } catch {
-      // Invalid date, return original
+    } catch (error) {
+      console.debug('Invalid date format:', date, error)
     }
     return date
   })()
@@ -284,7 +281,6 @@ function GenericToolCard({ toolCall, isExecuted, isLoading, onExecute }: ToolCal
   )
 }
 
-// Client-side messages that appear above tool calls to guide the user
 const TOOL_CALL_MESSAGES: Record<string, string> = {
   [ToolNames.CREATE_POST]: "Let's get started! Click the button below to create and open the post editor.",
   [ToolNames.OPEN_POST]: "I'll help you open that post. Click the button below to view it in the editor.",
@@ -292,7 +288,6 @@ const TOOL_CALL_MESSAGES: Record<string, string> = {
   [ToolNames.NAVIGATE]: "Let me take you to your calendar. Click the button below to navigate there.",
 }
 
-// Lookup map for tool components - makes it easy to add new tools
 const toolComponentMap: Record<string, React.ComponentType<ToolCallUIProps>> = {
   [ToolNames.APPLY_CAPTION]: CaptionSuggestionCard,
   [ToolNames.CREATE_POST]: CreatePostCard,
@@ -301,13 +296,10 @@ const toolComponentMap: Record<string, React.ComponentType<ToolCallUIProps>> = {
 }
 
 function ToolCallRenderer({ toolCall, isExecuted, isLoading, onExecute, aiMessage }: ToolCallUIProps) {
-  // Look up the component from the map, default to GenericToolCard if not found
   const CardComponent = toolComponentMap[toolCall.name] || GenericToolCard
 
-  // Use client-side message if available, otherwise fall back to AI message
   const message = TOOL_CALL_MESSAGES[toolCall.name] || aiMessage
 
-  // Show message above the tool call card if available
   if (message) {
     return (
       <div className="space-y-2">
@@ -335,22 +327,13 @@ function ToolCallRenderer({ toolCall, isExecuted, isLoading, onExecute, aiMessag
 export function ChatSidebar({ isOpen, onClose }: ChatSidebarProps) {
   const navigate = useNavigate()
   const { calendarSlug } = useParams()
-  const { clientContext } = useAppContext() // 1. Read the full context
+  const { clientContext } = useAppContext()
 
-  // Use a ref to track the latest context value so we can poll it in async functions
   const contextRef = useRef(clientContext)
   useEffect(() => {
     contextRef.current = clientContext
   }, [clientContext])
 
-  /**
-   * Generic function to wait for a context value to appear.
-   * Useful for waiting for async state updates (e.g., post creation, context updates).
-   * 
-   * @param checkFn Function that returns true when the condition is met
-   * @param options Configuration options
-   * @returns The value returned by checkFn when condition is met, or undefined if timeout
-   */
   const waitForContext = useCallback(async <T,>(
     checkFn: (context: typeof clientContext) => T | null | undefined,
     options: {
@@ -365,7 +348,6 @@ export function ChatSidebar({ isOpen, onClose }: ChatSidebarProps) {
       initialDelay = 100,
     } = options
 
-    // Give React a moment to process events and start updating state
     if (initialDelay > 0) {
       await new Promise(resolve => setTimeout(resolve, initialDelay))
     }
@@ -377,21 +359,16 @@ export function ChatSidebar({ isOpen, onClose }: ChatSidebarProps) {
       const result = checkFn(currentContext)
 
       if (result !== null && result !== undefined) {
-        // Give it one more tick to ensure the update is fully propagated
         await new Promise(resolve => setTimeout(resolve, 50))
         return result
       }
 
-      // Wait before checking again
       await new Promise(resolve => setTimeout(resolve, pollInterval))
     }
 
-    // Timeout - return the last checked value
     return checkFn(contextRef.current)
   }, [])
 
-  // Optimistic Thread ID Generation
-  // Initialize immediately so we have an ID ready for the stream subscription
   const generateThreadId = (calendarId: string | null | undefined): string => {
     if (calendarId) {
       return `${calendarId}-${crypto.randomUUID()}`
@@ -401,11 +378,9 @@ export function ChatSidebar({ isOpen, onClose }: ChatSidebarProps) {
 
   const [threadId, setThreadId] = useState<string>(() => generateThreadId(clientContext.calendarId ?? undefined))
 
-  // New State for Streaming
   const [streamingContent, setStreamingContent] = useState("")
   const [aiStatus, setAiStatus] = useState<string | null>(null)
 
-  // Connect Stream Hook
   const { connect, disconnect } = useChatStream({
     threadId,
     onToken: (token) => setStreamingContent(prev => prev + token),
@@ -424,14 +399,12 @@ export function ChatSidebar({ isOpen, onClose }: ChatSidebarProps) {
   const [targetTraceId, setTargetTraceId] = useState<string | null>(null)
   const [isSubmittingFeedback, setIsSubmittingFeedback] = useState(false)
 
-  // Generate a new threadId when calendarId changes
   useEffect(() => {
     if (clientContext.calendarId) {
       setThreadId(generateThreadId(clientContext.calendarId))
     }
   }, [clientContext.calendarId])
 
-  // Function to start a new chat session
   const startNewChat = useCallback(() => {
     setMessages([
       {
@@ -464,15 +437,7 @@ export function ChatSidebar({ isOpen, onClose }: ChatSidebarProps) {
     }
   }, [isOpen])
 
-  /**
-   * Sends a tool execution result back to the agent.
-   * With returnDirect: true, the tool result goes directly to the user, but we still need
-   * to send a message so the agent knows the tool completed and can continue.
-   * The memory store handles conversation history, so we just send the continuation message.
-   */
   const sendToolResult = useCallback(async (_toolCallId: string, _toolName: string, _result: string) => {
-    // Build the clientContext object from the AppContext
-    // Use contextRef to get the latest context value (updated by useEffect)
     const currentContext = contextRef.current
     const backendClientContext = {
       page: currentContext.page === 'postEditor' ? 'calendar' : currentContext.page,
@@ -481,8 +446,6 @@ export function ChatSidebar({ isOpen, onClose }: ChatSidebarProps) {
       pageState: currentContext.pageState || undefined,
     }
 
-    // Send a continuation message - the backend's memory store will handle
-    // loading the conversation history and processing the tool result
     const response = await apiFetch(ApiRoutes.AI.CHAT, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -500,55 +463,40 @@ export function ChatSidebar({ isOpen, onClose }: ChatSidebarProps) {
 
     const data = await response.json()
 
-    // Update threadId from response if provided (backend may have generated one)
     if (data.threadId && data.threadId !== threadId) {
       setThreadId(data.threadId)
     }
 
-    // Add the agent's continuation response
-    // Note: We don't add the ToolMessage to UI state since the memory store
-    // handles it internally and we filter out tool messages from display anyway
     setMessages((prev) => [
       ...prev,
       {
         role: "assistant",
         content: data.response || "",
         toolCalls: data.toolCalls,
-        traceId: data.traceId, // Capture the ID from server
+        traceId: data.traceId,
       },
     ])
   }, [threadId])
 
-  /**
-   * Executes a client-side tool action by dispatching events via the event bus.
-   * This is a "dumb" dispatcher - it doesn't contain logic specific to any tool.
-   * Components subscribe to events and handle the logic themselves.
-   */
   const executeClientTool = useCallback(async (toolCall: ToolCall) => {
-    // Prevent multiple clicks
     if (executedToolCalls.has(toolCall.id)) {
       return
     }
-    
-    // Mark as executed immediately to prevent duplicate clicks
+
     setExecutedToolCalls((prev) => new Set(prev).add(toolCall.id))
     
     setIsLoading(true)
     try {
       let result: string = ""
 
-      // Use a switch statement for better readability and type safety
       switch (toolCall.name) {
         case ToolNames.NAVIGATE: {
-          // TypeScript narrows the type here
           if (toolCall.name !== ToolNames.NAVIGATE) break
           const navigateArgs = toolCall.args as { label?: string; page?: string }
-      // Dispatch navigation event - the layout or appropriate component will handle it
           appEventBus.dispatch(AppEvents.NAVIGATE_TO_CALENDAR, {
             label: navigateArgs.label,
           })
 
-          // Also handle navigation directly here as a fallback
           if (calendarSlug) {
             navigate(`/${calendarSlug}/calendar`)
             result = "Navigated to calendar page"
@@ -559,11 +507,8 @@ export function ChatSidebar({ isOpen, onClose }: ChatSidebarProps) {
         }
 
         case ToolNames.APPLY_CAPTION: {
-          // TypeScript narrows the type here
           if (toolCall.name !== ToolNames.APPLY_CAPTION) break
           const applyCaptionArgs = toolCall.args as { postId: string; caption: string }
-        // Dispatch caption application event - PostEditor will handle it
-        // Use postId from context if available (more reliable for new posts), otherwise use the one from tool call
           const postId = clientContext.pageState?.postId || applyCaptionArgs.postId
           appEventBus.dispatch(AppEvents.APPLY_CAPTION, {
             postId: postId,
@@ -574,15 +519,12 @@ export function ChatSidebar({ isOpen, onClose }: ChatSidebarProps) {
         }
 
         case ToolNames.CREATE_POST: {
-          // TypeScript narrows the type here
           if (toolCall.name !== ToolNames.CREATE_POST) break
           const createPostArgs = toolCall.args as { date: string; label?: string }
-        // Dispatch post creation event - CalendarView will handle it
           appEventBus.dispatch(AppEvents.CREATE_POST, {
             date: createPostArgs.date,
           })
 
-          // Wait for the post to be created and context to be updated with postId
           const postId = await waitForContext(
             (context) => context.pageState?.postId,
             { maxWaitTime: 5000, pollInterval: 100, initialDelay: 100 }
@@ -595,10 +537,8 @@ export function ChatSidebar({ isOpen, onClose }: ChatSidebarProps) {
         }
 
         case ToolNames.OPEN_POST: {
-          // TypeScript narrows the type here
           if (toolCall.name !== ToolNames.OPEN_POST) break
           const openPostArgs = toolCall.args as { postId: string; label?: string }
-        // Dispatch post open event - CalendarView will handle it
           appEventBus.dispatch(AppEvents.OPEN_POST, {
             postId: openPostArgs.postId,
           })
@@ -607,25 +547,20 @@ export function ChatSidebar({ isOpen, onClose }: ChatSidebarProps) {
         }
 
         default: {
-          // This trick gives you a compile-time error if you
-          // forget to handle a new tool type from your `ToolCall` discriminated union.
           const _exhaustiveCheck: never = toolCall as never
-          void _exhaustiveCheck // Mark as intentionally unused
+          void _exhaustiveCheck
           throw new Error(`Unknown client-side tool: ${(toolCall as any).name}`)
         }
       }
 
-      // Send tool result back to agent
       await sendToolResult(toolCall.id, toolCall.name, result)
     } catch (error) {
       console.error('Error executing tool call:', error)
-      // If execution fails, unmark as executed so user can retry
       setExecutedToolCalls((prev) => {
         const newSet = new Set(prev)
         newSet.delete(toolCall.id)
         return newSet
       })
-      // Show error to user
       setMessages((prev) => [
         ...prev,
         {
@@ -638,17 +573,12 @@ export function ChatSidebar({ isOpen, onClose }: ChatSidebarProps) {
     }
   }, [executedToolCalls, clientContext, calendarSlug, navigate, sendToolResult, waitForContext])
 
-  /**
-   * Executes a message programmatically (bypasses input state).
-   * This is used for triggered messages from events.
-   */
   const executeMessage = useCallback(async (msgContent: string) => {
     if (!msgContent.trim() || isLoading) return
 
     const userMessage: Message = { role: "user", content: msgContent.trim() }
     const newMessages = [...messages, userMessage]
-    
-    // Check for pending tool calls (tool calls that haven't been executed)
+
     const pendingToolCalls: Array<{ id: string; name: string }> = []
     for (const msg of messages) {
       if (msg.role === "assistant" && msg.toolCalls) {
@@ -659,11 +589,9 @@ export function ChatSidebar({ isOpen, onClose }: ChatSidebarProps) {
         }
       }
     }
-    
-    // Update UI immediately for better UX (optimistic update)
+
     setMessages(newMessages)
-    
-    // START STREAMING
+
     setStreamingContent("")
     setAiStatus("Thinking...")
     connect()
@@ -671,8 +599,6 @@ export function ChatSidebar({ isOpen, onClose }: ChatSidebarProps) {
     setIsLoading(true)
 
     try {
-      // Mark pending tool calls as cancelled (they'll be ignored by the memory store)
-      // The memory store handles conversation history, so we don't need to send it
       if (pendingToolCalls.length > 0) {
         setExecutedToolCalls((prev) => {
           const newSet = new Set(prev)
@@ -681,8 +607,6 @@ export function ChatSidebar({ isOpen, onClose }: ChatSidebarProps) {
         })
       }
 
-      // Build the clientContext object from the AppContext
-      // The backend expects: { page?, component?, postId?, noteId?, pageState? }
       const backendClientContext = {
         page: clientContext.page === 'postEditor' ? 'calendar' : clientContext.page,
         component: clientContext.page === 'postEditor' ? 'postEditor' : undefined,
@@ -691,14 +615,13 @@ export function ChatSidebar({ isOpen, onClose }: ChatSidebarProps) {
         pageState: clientContext.pageState || undefined,
       }
 
-      // SEND REQUEST (Pass the CLIENT-GENERATED threadId)
       const response = await apiFetch(ApiRoutes.AI.CHAT, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           input: userMessage.content,
           calendarId: clientContext.calendarId || '',
-          threadId, // CRITICAL: Use client-generated threadId
+          threadId,
           clientContext: backendClientContext,
         }),
       })
@@ -708,25 +631,22 @@ export function ChatSidebar({ isOpen, onClose }: ChatSidebarProps) {
       }
 
       const data = await response.json()
-      
-      // Update threadId from response if provided (backend may have generated one)
+
       if (data.threadId && data.threadId !== threadId) {
         setThreadId(data.threadId)
       }
 
-      // Finalize: Replace streaming content with final response
       setMessages((prev) => [
         ...prev,
         {
           role: "assistant",
           content: data.response || "",
           toolCalls: data.toolCalls,
-          traceId: data.traceId, // Capture the ID from server
+          traceId: data.traceId,
         },
       ])
     } catch (error) {
       console.error('Error sending chat message:', error)
-      // Show error message to user
       setMessages((prev) => [
         ...prev,
         {
@@ -735,7 +655,6 @@ export function ChatSidebar({ isOpen, onClose }: ChatSidebarProps) {
         },
       ])
     } finally {
-      // STOP STREAMING
       setIsLoading(false)
       setStreamingContent("")
       setAiStatus(null)
@@ -743,11 +662,6 @@ export function ChatSidebar({ isOpen, onClose }: ChatSidebarProps) {
     }
   }, [isLoading, messages, executedToolCalls, clientContext, threadId, connect, disconnect])
 
-  /**
-   * Handles sending a user message to the agent.
-   * Updates UI optimistically, then adds the agent's response when it arrives.
-   * If there are pending tool calls, sends cancellation ToolMessages for them.
-   */
   const handleSend = useCallback(async () => {
     if (!input.trim() || isLoading) return
     const msgContent = input.trim()
@@ -755,23 +669,18 @@ export function ChatSidebar({ isOpen, onClose }: ChatSidebarProps) {
     await executeMessage(msgContent)
   }, [input, isLoading, executeMessage])
 
-  // Listen for AI chat trigger events
   useAppEvent<TriggerAIChatPayload>(AppEvents.TRIGGER_AI_CHAT, (payload) => {
     const { message, shouldClear } = payload
 
-    // If requested, clear previous history
     if (shouldClear) {
       startNewChat()
-      // Small timeout to allow state to clear before processing new message
       setTimeout(() => executeMessage(message), 100)
     } else {
       executeMessage(message)
     }
   }, [startNewChat, executeMessage])
 
-  // 2. Positive Feedback Handler (Immediate)
   const handlePositiveFeedback = async (traceId: string, index: number) => {
-    // Optimistic update
     setMessages((prev) =>
       prev.map((m, i) => (i === index ? { ...m, feedbackStatus: "submitted" } : m)),
     )
@@ -788,13 +697,11 @@ export function ChatSidebar({ isOpen, onClose }: ChatSidebarProps) {
     }
   }
 
-  // 3. Negative Feedback Handler (Opens Modal)
   const onNegativeFeedbackClick = (traceId: string) => {
     setTargetTraceId(traceId)
     setFeedbackModalOpen(true)
   }
 
-  // 4. Submit Negative Feedback
   const handleNegativeFeedbackSubmit = async (comment: string) => {
     if (!targetTraceId) return
 
@@ -807,7 +714,6 @@ export function ChatSidebar({ isOpen, onClose }: ChatSidebarProps) {
         comment: comment,
       })
 
-      // Update UI
       setMessages((prev) =>
         prev.map((m) =>
           m.traceId === targetTraceId ? { ...m, feedbackStatus: "submitted" } : m,
@@ -864,9 +770,8 @@ export function ChatSidebar({ isOpen, onClose }: ChatSidebarProps) {
       {/* Messages */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         {messages
-          .filter((message) => message.role !== "tool") // Don't render ToolMessages in UI
+          .filter((message) => message.role !== "tool")
           .map((message, index) => {
-            // Generate stable key: use tool call IDs if available, otherwise use index + role + content hash
             const messageKey = message.toolCalls?.length 
               ? `msg-${message.toolCalls.map(tc => tc.id).join('-')}`
               : `msg-${index}-${message.role}-${message.content.substring(0, 20)}`
@@ -885,10 +790,8 @@ export function ChatSidebar({ isOpen, onClose }: ChatSidebarProps) {
                 message.role === "user"
                   ? "bg-primary text-primary-foreground"
                   : "bg-muted text-muted-foreground",
-              )}
-            >
-                  {/* Show message content only if there are no tool calls */}
-                  {/* When tool calls are present, the message will be shown by ToolCallRenderer */}
+                  )}
+                >
                   {(!message.toolCalls || message.toolCalls.length === 0) && message.content && (
                     <div className="text-sm">
                       <ReactMarkdown
@@ -960,7 +863,6 @@ export function ChatSidebar({ isOpen, onClose }: ChatSidebarProps) {
                       )}
                     </div>
                   )}
-                  {/* Render tool calls with custom UI */}
               {message.toolCalls && message.toolCalls.length > 0 && (
                     <div className="flex flex-col gap-3">
                       {message.toolCalls.map((toolCall) => {
@@ -973,7 +875,7 @@ export function ChatSidebar({ isOpen, onClose }: ChatSidebarProps) {
                         isExecuted={isExecuted}
                         isLoading={isLoading}
                         onExecute={executeClientTool}
-                        aiMessage={undefined} // Don't pass AI message - we use client-side messages instead
+                        aiMessage={undefined}
                       />
                     )
                   })}
@@ -983,12 +885,9 @@ export function ChatSidebar({ isOpen, onClose }: ChatSidebarProps) {
           </div>
             )
           })}
-        {/* Streaming Bubble (Only visible when loading) */}
         {isLoading && (
           <div className="flex w-full justify-start">
             <div className="max-w-[80%] rounded-lg px-4 py-2 bg-muted text-muted-foreground flex flex-col gap-2">
-              
-              {/* Status Bar */}
               {aiStatus && (
                 <div className="flex items-center gap-2 text-xs font-medium text-primary/80 animate-pulse">
                   <Sparkles className="h-3 w-3" />
@@ -996,7 +895,6 @@ export function ChatSidebar({ isOpen, onClose }: ChatSidebarProps) {
                 </div>
               )}
 
-              {/* Stream Content */}
               {streamingContent ? (
                 <div className="text-sm">
                   <ReactMarkdown
@@ -1038,7 +936,6 @@ export function ChatSidebar({ isOpen, onClose }: ChatSidebarProps) {
                   </ReactMarkdown>
                 </div>
               ) : (
-                /* Empty State (Dots) if status is null or just starting */
                 !aiStatus && (
                   <div className="flex gap-1 h-6 items-center">
                     <div className="h-2 w-2 rounded-full bg-current animate-bounce" />

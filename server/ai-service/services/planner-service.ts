@@ -11,9 +11,6 @@ export class PlannerService {
     this.model = model;
   }
 
-  /**
-   * Helper to validate and extract plan from result
-   */
   private extractPlan(result: unknown): Plan | null {
     if (!result || typeof result !== 'object') {
       return null;
@@ -21,14 +18,7 @@ export class PlannerService {
     return result as Plan;
   }
 
-  /**
-   * Generates a strategic plan based on user input and context.
-   * Returns null if the request is simple and requires no multi-step planning.
-   */
   async generatePlan(input: string, contextSummary: string): Promise<string | null> {
-    console.log('[Performance] Starting PlannerService.generatePlan');
-    console.time('[Performance] PlannerService.generatePlan');
-    
     try {
       const prompt = PromptTemplate.fromTemplate(`
         You are a strategic planner for a Social Media AI Agent.
@@ -63,7 +53,6 @@ export class PlannerService {
         .map(w => `- ID: ${w.id}\n  Desc: ${w.description}\n  Default Steps:\n${w.steps.join("\n")}`)
         .join("\n\n");
 
-      // Use structured output to ensure strict adherence to schema
       const chain = prompt.pipe(
         this.model.withStructuredOutput(PlanSchema, { name: "planner" })
       );
@@ -77,25 +66,19 @@ export class PlannerService {
 
       const planResult = this.extractPlan(result);
       if (!planResult) {
-        console.timeEnd('[Performance] PlannerService.generatePlan');
         return null;
       }
 
-      // Fail fast: If no steps or empty steps, return null
       if (!planResult.steps || !Array.isArray(planResult.steps) || planResult.steps.length === 0) {
-        console.timeEnd('[Performance] PlannerService.generatePlan');
         return null; 
       }
 
-      // TypeScript now knows planResult.steps is a non-empty array
       const plan = `\n\n**CURRENT PLAN:**\n${planResult.steps.map((s: string) => `- ${s}`).join("\n")}\n(Follow this plan strictly.)`;
-      console.timeEnd('[Performance] PlannerService.generatePlan');
       return plan;
 
     } catch (error) {
-      console.timeEnd('[Performance] PlannerService.generatePlan');
       console.error("Error generating plan:", error);
-      return null; // Fallback to standard chat on error
+      return null;
     }
   }
 }

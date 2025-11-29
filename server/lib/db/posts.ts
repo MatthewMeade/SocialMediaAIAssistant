@@ -11,7 +11,7 @@ export async function getPosts(calendarId: string): Promise<Post[]> {
     .order("date", { ascending: true })
 
   if (error) {
-    console.error("[v0] Error loading posts:", error)
+    console.error("Error loading posts:", error)
     return []
   }
 
@@ -25,7 +25,7 @@ export async function getPosts(calendarId: string): Promise<Post[]> {
     status: p.status,
     authorId: p.author_id,
     authorName: p.author_name,
-    comments: [], // Comments will be loaded separately if needed
+    comments: [],
   }))
 }
 
@@ -39,7 +39,7 @@ export async function getPostById(postId: string): Promise<Post | null> {
     .single()
 
   if (error || !data) {
-    console.error("[v0] Error loading post:", error)
+    console.error("Error loading post:", error)
     return null
   }
 
@@ -53,7 +53,7 @@ export async function getPostById(postId: string): Promise<Post | null> {
     status: data.status,
     authorId: data.author_id,
     authorName: data.author_name,
-    comments: [], // Comments will be loaded separately if needed
+    comments: [],
   }
 }
 
@@ -72,11 +72,10 @@ export async function savePost(post: Omit<Post, "id"> & { id?: string }): Promis
   }
 
   if (post.id) {
-    // Update existing post
     const { data, error } = await supabase.from("posts").update(postData).eq("id", post.id).select().single()
 
     if (error) {
-      console.error("[v0] Error updating post:", error)
+      console.error("Error updating post:", error)
       return null
     }
 
@@ -93,11 +92,10 @@ export async function savePost(post: Omit<Post, "id"> & { id?: string }): Promis
       comments: post.comments || [],
     }
   } else {
-    // Create new post
     const { data, error } = await supabase.from("posts").insert(postData).select().single()
 
     if (error) {
-      console.error("[v0] Error creating post:", error)
+      console.error("Error creating post:", error)
       return null
     }
 
@@ -122,7 +120,7 @@ export async function deletePost(postId: string): Promise<boolean> {
   const { error } = await supabase.from("posts").delete().eq("id", postId)
 
   if (error) {
-    console.error("[v0] Error deleting post:", error)
+    console.error("Error deleting post:", error)
     return false
   }
 

@@ -1,12 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
-
 import { apiGet, apiPut } from "@/lib/api-client"
-
 import { ApiRoutes } from "@/lib/api-routes"
-
-
-
-// Define the shape of the profile data
 
 interface Profile {
 
@@ -55,9 +49,7 @@ export function useProfile() {
     },
 
     retry: 1,
-
-    staleTime: 1000 * 60 * 5, // Cache profile for 5 minutes
-
+    staleTime: 1000 * 60 * 5,
   })
 
 

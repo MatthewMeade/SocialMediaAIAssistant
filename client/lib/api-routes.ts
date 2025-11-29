@@ -1,7 +1,3 @@
-/**
- * API route constants.
- * Centralizes all API endpoints to prevent typos and make refactoring easier.
- */
 export const ApiRoutes = {
   AI: {
     CHAT: "/api/ai/chat",
@@ -17,7 +13,7 @@ export const ApiRoutes = {
   BRAND_VOICE: "/api/brand-voice",
   INBOX: "/api/inbox",
   HEALTH: "/api/health",
-  ORGANIZATION: "/api/organization", // Add new route
+  ORGANIZATION: "/api/organization",
   NOTES: "/api/notes",
 } as const;
 

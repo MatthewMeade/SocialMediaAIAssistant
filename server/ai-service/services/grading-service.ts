@@ -19,37 +19,25 @@ Then, provide an overall score (0-100) and 2-3 actionable suggestions for improv
   inputVariables: ['rules', 'caption'],
 })
 
-/**
- * Grades a caption against a set of brand rules using a structured output chain.
- * This function is "pure" and does not handle auth or data fetching.
- */
 export async function getBrandVoiceScore(
   caption: string,
   brandRules: BrandRule[],
   chatModel: BaseChatModel,
 ): Promise<BrandScore> {
-  console.log('[Performance] Starting getBrandVoiceScore');
-  console.time('[Performance] getBrandVoiceScore');
-  
   try {
-    // Format rules for the prompt
     const rulesString = brandRules
       .filter((r) => r.enabled)
       .map((r) => `- **${r.title} (ID: ${r.id}):** ${r.description}`)
       .join('\n')
 
     if (!rulesString) {
-      // No enabled rules, return a default score
-      const result = {
+      return {
         overall: 100,
         rules: [],
         suggestions: ['No active brand rules were provided to grade against.'],
       }
-      console.timeEnd('[Performance] getBrandVoiceScore');
-      return result;
     }
 
-    // Create the chain with structured output
     const chain = graderPromptTemplate.pipe(
       chatModel.withStructuredOutput(BrandScoreSchema, {
         name: 'brand_voice_grader',
@@ -60,11 +48,10 @@ export async function getBrandVoiceScore(
       rules: rulesString,
       caption: caption || '(No caption provided)',
     }, { callbacks: [langfuseHandler] })
-    
-    console.timeEnd('[Performance] getBrandVoiceScore');
+
     return result;
   } catch (error) {
-    console.timeEnd('[Performance] getBrandVoiceScore');
+    console.log('getBrandVoiceScore', { error })
     throw error;
   }
 }

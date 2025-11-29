@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { Upload, X, ChevronLeft, ChevronRight, ImageIcon, Sparkles } from "lucide-react"
 import { Label } from "@/components/ui/label"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -21,11 +21,32 @@ export function PostImageGallery({ post, onUpdate }: PostImageGalleryProps) {
   const [libraryMedia, setLibraryMedia] = useState<MediaItem[]>([])
   const [isLoadingLibrary, setIsLoadingLibrary] = useState(false)
 
+  const loadLibraryMedia = useCallback(async () => {
+    setIsLoadingLibrary(true)
+    try {
+      const calendarId = post.calendarId
+      if (!calendarId) return
+
+      try {
+        const data = await apiGet<MediaItem[]>(
+          `/api/media?calendarId=${calendarId}`,
+        )
+        setLibraryMedia(data)
+      } catch (error) {
+        console.error("Error loading library media:", error)
+      }
+    } catch (error) {
+      console.error("Error loading library media:", error)
+    } finally {
+      setIsLoadingLibrary(false)
+    }
+  }, [post.calendarId])
+
   useEffect(() => {
     if (showMediaPicker && libraryMedia.length === 0) {
       loadLibraryMedia()
     }
-  }, [showMediaPicker])
+  }, [showMediaPicker, libraryMedia.length, loadLibraryMedia])
 
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files
@@ -46,7 +67,7 @@ export function PostImageGallery({ post, onUpdate }: PostImageGalleryProps) {
 
       onUpdate({ images: [...post.images, ...uploadedUrls] })
     } catch (error) {
-      console.error("[v0] Error uploading images:", error)
+      console.error("Error uploading images:", error)
       alert("Failed to upload images. Please try again.")
     } finally {
       setIsUploading(false)
@@ -58,27 +79,6 @@ export function PostImageGallery({ post, onUpdate }: PostImageGalleryProps) {
     onUpdate({ images: newImages })
     if (currentImageIndex >= newImages.length && newImages.length > 0) {
       setCurrentImageIndex(newImages.length - 1)
-    }
-  }
-
-  const loadLibraryMedia = async () => {
-    setIsLoadingLibrary(true)
-    try {
-      const calendarId = post.calendarId
-      if (!calendarId) return
-
-      try {
-        const data = await apiGet<MediaItem[]>(
-          `/api/media?calendarId=${calendarId}`,
-        )
-        setLibraryMedia(data)
-      } catch (error) {
-        console.error("[v0] Error loading library media:", error)
-      }
-    } catch (error) {
-      console.error("[v0] Error loading library media:", error)
-    } finally {
-      setIsLoadingLibrary(false)
     }
   }
 

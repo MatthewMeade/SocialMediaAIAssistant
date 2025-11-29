@@ -16,7 +16,6 @@ export default function CalendarPage() {
   }
 
   if (!calendarSlug || !calendar || !user) {
-    // isLoading is false, but calendar not found
     return <div>Calendar not found...</div>
   }
 

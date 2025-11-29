@@ -19,8 +19,7 @@ export interface BrandScorePanelProps {
 export function BrandScorePanel({ score, calendarId, isLoading = false, isApplyingSuggestions = false, onApplySuggestions, onClose }: BrandScorePanelProps) {
   const { brandRules } = useBrandRules(calendarId)
   
-  // Create a map of ruleId to rule for quick lookup
-  const rulesMap = new Map(brandRules.map(rule => [rule.id, rule]))
+  const rulesMap = new Map(brandRules.map((rule) => [rule.id, rule]))
   const getScoreIcon = (ruleScore: number) => {
     if (ruleScore >= 80) return <CheckCircle className="h-4 w-4 text-green-600" />
     if (ruleScore >= 50) return <AlertCircle className="h-4 w-4 text-yellow-600" />

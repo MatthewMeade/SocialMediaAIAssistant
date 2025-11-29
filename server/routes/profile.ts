@@ -20,8 +20,6 @@ const app = new Hono<{ Variables: Variables }>()
 
 
 
-// Middleware to load and validate user
-
 app.use('*', requireAuth)
 
 
@@ -48,7 +46,7 @@ app.get("/", async (c) => {
 
   } catch (error: any) {
 
-    console.error("[PROFILE_ROUTE] Error fetching profile:", error)
+    console.error("Error fetching profile:", error)
 
     return c.json({ error: error.message || "Failed to fetch profile" }, 500)
 
@@ -73,10 +71,6 @@ app.put("/", async (c) => {
 
 
   const body = await c.req.json()
-
-  
-
-  // Map the request body to ProfileUpdate format
 
   const updates: ProfileUpdate = {}
 
@@ -106,7 +100,7 @@ app.put("/", async (c) => {
 
   } catch (error: any) {
 
-    console.error("[PROFILE_ROUTE] Error updating profile:", error)
+    console.error("Error updating profile:", error)
 
     return c.json({ error: error.message || "Failed to update profile" }, 500)
 

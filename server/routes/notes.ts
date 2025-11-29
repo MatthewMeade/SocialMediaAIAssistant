@@ -12,7 +12,6 @@ type Variables = {
 
 const app = new Hono<{ Variables: Variables }>()
 
-// Middleware to load and validate user
 app.use('*', requireAuth)
 
 function mapNoteToResponse(note: any) {
@@ -176,7 +175,6 @@ app.delete("/:id", async (c) => {
 
   const noteId = c.req.param("id")
 
-  // First, get the note to check calendar access
   const { data: existingNote, error: fetchError } = await supabase
     .from("notes")
     .select("calendar_id")

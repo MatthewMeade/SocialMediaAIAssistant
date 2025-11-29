@@ -4,16 +4,14 @@ import { Document } from "langchain";
 import { createClient } from "server/lib/supabase/server";
 import { SupabaseVectorStore } from "@langchain/community/vectorstores/supabase";
 import { SupabaseClient } from "@supabase/supabase-js";
+
 export enum DocType {
     Note = 'note',
     Knowledgebase = 'knowledgebase'
 }
 
-// TODO: Centralize Config 
 const CHUNK_SIZE = 512;
 const CHUNK_OVERLAP = 100;
-
-// TODO: Index on (docType, id), calendarId
 
 export type StoreMetaData = {
     documentId: string,

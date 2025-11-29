@@ -10,12 +10,8 @@ type Variables = {
 
 const app = new Hono<{ Variables: Variables }>()
 
-// Middleware to load and validate user
 app.use('*', requireAuth)
 
-/**
- * Get media items for a calendar
- */
 app.get('/', async (c) => {
   const authResult = c.get('authResult')
   if (!isUser(authResult)) {
@@ -29,7 +25,6 @@ app.get('/', async (c) => {
     return c.json({ error: 'calendarId is required' }, 400)
   }
 
-  // Verify calendar access
   const hasAccess = await canAccessCalendar(user.id, calendarId)
   if (!hasAccess) {
     return c.json({ error: 'Forbidden' }, 403)
@@ -38,7 +33,6 @@ app.get('/', async (c) => {
   try {
     const mediaItems = await getMediaByCalendar(calendarId)
     
-    // Map to shared MediaItem type (exclude userId)
     const response: MediaItem[] = mediaItems.map((item) => ({
       id: item.id,
       calendarId: item.calendarId,
@@ -56,9 +50,6 @@ app.get('/', async (c) => {
   }
 })
 
-/**
- * Delete a media item
- */
 app.delete('/', async (c) => {
   const authResult = c.get('authResult')
   if (!isUser(authResult)) {

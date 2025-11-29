@@ -46,7 +46,6 @@ export function PostComments({ comments, onAddComment }: PostCommentsProps) {
         </h3>
       </div>
 
-      {/* Comments list */}
       <div className="space-y-3 max-h-64 overflow-y-auto">
         {comments.length === 0 ? (
           <p className="text-sm text-muted-foreground text-center py-4">No comments yet. Be the first to comment!</p>
@@ -68,7 +67,6 @@ export function PostComments({ comments, onAddComment }: PostCommentsProps) {
         )}
       </div>
 
-      {/* Add comment form */}
       <form onSubmit={handleSubmit} className="space-y-3">
         <Textarea
           placeholder="Add a comment..."

@@ -9,7 +9,6 @@ type Variables = {
 
 const app = new Hono<{ Variables: Variables }>()
 
-// Middleware to load and validate user
 app.use('*', requireAuth)
 
 function generateSlug(name: string): string {

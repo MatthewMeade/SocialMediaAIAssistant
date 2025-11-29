@@ -35,9 +35,6 @@ function RootRedirect() {
     return <Navigate to="/login" replace />
   }
 
-  // If user is authenticated, fetch calendars and redirect to first calendar
-  // This will be handled by the login page's redirect logic if needed
-  // For now, redirect to a default calendar route
   return <Navigate to="/default/calendar" replace />
 }
 

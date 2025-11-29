@@ -1,5 +1,3 @@
-// client/components/ai/image-generator-panel.tsx
-
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
@@ -60,7 +58,6 @@ export function ImageGeneratorPanel({
   }
 
   const handleClose = () => {
-    // Reset state on close
     setGeneratedMedia(null)
     setPrompt(postCaption)
     onClose()

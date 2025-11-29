@@ -12,22 +12,18 @@ export function CalendarGrid({ currentDate, posts, onAddPost, onEditPost }: Cale
   const year = currentDate.getFullYear()
   const month = currentDate.getMonth()
 
-  // Get first day of month and number of days
   const firstDay = new Date(year, month, 1)
   const lastDay = new Date(year, month + 1, 0)
   const daysInMonth = lastDay.getDate()
   const startingDayOfWeek = firstDay.getDay()
 
-  // Get days from previous month to fill the grid
   const previousMonth = new Date(year, month, 0)
   const daysInPreviousMonth = previousMonth.getDate()
 
-  // Calculate total cells needed
   const totalCells = Math.ceil((daysInMonth + startingDayOfWeek) / 7) * 7
 
   const days = []
 
-  // Previous month days
   for (let i = startingDayOfWeek - 1; i >= 0; i--) {
     days.push({
       date: new Date(year, month - 1, daysInPreviousMonth - i),
@@ -35,7 +31,6 @@ export function CalendarGrid({ currentDate, posts, onAddPost, onEditPost }: Cale
     })
   }
 
-  // Current month days
   for (let i = 1; i <= daysInMonth; i++) {
     days.push({
       date: new Date(year, month, i),
@@ -43,7 +38,6 @@ export function CalendarGrid({ currentDate, posts, onAddPost, onEditPost }: Cale
     })
   }
 
-  // Next month days
   const remainingCells = totalCells - days.length
   for (let i = 1; i <= remainingCells; i++) {
     days.push({
@@ -56,7 +50,6 @@ export function CalendarGrid({ currentDate, posts, onAddPost, onEditPost }: Cale
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
-      {/* Week day headers */}
       <div className="grid grid-cols-7 border-b border-border bg-muted/30">
         {weekDays.map((day) => (
           <div
@@ -68,7 +61,6 @@ export function CalendarGrid({ currentDate, posts, onAddPost, onEditPost }: Cale
         ))}
       </div>
 
-      {/* Calendar grid */}
       <div className="grid flex-1 grid-cols-7 grid-rows-[repeat(auto-fit,minmax(0,1fr))] overflow-auto">
         {days.map((day, index) => {
           const dayPosts = posts.filter((post) => {

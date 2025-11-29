@@ -39,7 +39,7 @@ export function LibraryView({ calendarId }: LibraryViewProps) {
         await apiPost(ApiRoutes.UPLOAD, formData)
       }
     } catch (error) {
-      console.error("[v0] Error uploading files:", error)
+      console.error("Error uploading files:", error)
       alert("Failed to upload files. Please try again.")
     } finally {
       setIsUploading(false)

@@ -5,23 +5,15 @@ import { DocType, StoreMetaData, VectorStore } from "../vector-store";
 import { BaseMessage, Document } from "langchain";
 import { langfuseHandler } from "../../../server/lib/langfuse";
 
-
-// Helper to format history
 const formatHistory = (history: BaseMessage[]): string => {
     return history
-        .slice(-4) // Use last 4 messages for context
+        .slice(-4)
         .map(msg => `${msg.name}: ${msg.content}`)
         .join("\n");
 };
 
 const routeQueryResult = z.object({
     queries: z.array(z.object({
-        // datasource: z.enum(["note", /* "support" */]).describe(`
-        //     Given the user's messages, choose which datasource would be most relevant for answering 
-        //     their question. 
-            
-        //     note: Search the user's organization's database of notes
-        // `),
         queries: z.array(z.string().describe("An individual search query")).describe("A list of queries to search. Each search string will be queried for individually")
     })).describe("A list of datasources and the queries to search those sources for")
 }).describe("Route a user query to the most relevant datasource.")
@@ -49,40 +41,31 @@ export const searchDocuments = async (params: {
     input: string,
     calendarId: string
 }): Promise<Document<StoreMetaData>[]> => {
-    console.log('[Performance] Starting RAG searchDocuments');
-    console.time('[Performance] RAG searchDocuments');
-
     try {
         const store = new VectorStore();
 
         const result = await routeQueryPrompt
             .pipe(chatModel.withStructuredOutput(routeQueryResult))
             .pipe(async (data) => {
-                console.log(JSON.stringify({ data }, null, 2))
-                console.log('[Performance] Starting vector store searches');
-                console.time('[Performance] Vector store searches');
-
                 try {
                     const searchPromises = data.queries.map(async (group) => {
                         return store.searchDocuments({ calendarId: params.calendarId, text: group.queries, docType: DocType.Note })
                     }
                     );
                     const results = await Promise.all(searchPromises);
-                    console.timeEnd('[Performance] Vector store searches');
 
                     const uniqueResultsMap = results.flat().reduce((acc, cur) => ({ ...acc, [cur.metadata.documentType + cur.metadata.documentId]: cur }), {} as Record<string, Document<StoreMetaData>>)
                     return Object.values(uniqueResultsMap);
                 } catch (error) {
-                    console.timeEnd('[Performance] Vector store searches');
+                    console.log('searchDocuments pipe', { error })
                     throw error;
                 }
             })
             .invoke({ history: formatHistory(params.history), input: params.input }, { callbacks: [langfuseHandler] });
 
-        console.timeEnd('[Performance] RAG searchDocuments');
         return result;
     } catch (error) {
-        console.timeEnd('[Performance] RAG searchDocuments');
+        console.log('searchDocuments', { error })
         throw error;
     }
 }

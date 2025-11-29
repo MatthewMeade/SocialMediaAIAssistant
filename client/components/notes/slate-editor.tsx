@@ -14,7 +14,6 @@ import { Bold, Italic, Underline, List, ListOrdered, Quote, Heading1, Heading2 }
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 
-// Define custom types
 type CustomElement =
   | { type: "paragraph"; children: CustomText[] }
   | { type: "heading-one"; children: CustomText[] }
@@ -44,12 +43,10 @@ interface SlateEditorProps {
   className?: string
 }
 
-// Default empty value for Slate
 const DEFAULT_SLATE_VALUE: Descendant[] = [
   { type: "paragraph" as const, children: [{ text: "" }] },
 ]
 
-// Helper that guarantees we always return a valid Slate value
 function normalizeSlateContent(content: any): Descendant[] {
   const createEmptyValue = (): CustomElement[] => [
     { type: "paragraph" as const, children: [{ text: "" }] },
@@ -147,41 +144,32 @@ const Element = ({ attributes, children, element }: RenderElementProps) => {
   }
 }
 
-// Normalize editor to fix invalid selections and structure
 function normalizeEditor(editor: CustomEditor) {
   const { selection } = editor
   
-  // If selection exists but is invalid, fix it
   if (selection) {
     try {
-      // Check if anchor path is valid
       const anchorPath = selection.anchor.path
       if (anchorPath[0] >= editor.children.length) {
-        // Path points beyond document, reset to end
         const end = Editor.end(editor, [])
         Transforms.select(editor, end)
         return
       }
       
-      // Try to get the node at the path
       const node = Editor.node(editor, anchorPath)
       if (!node) {
-        // Selection is invalid, reset to end of document
         const end = Editor.end(editor, [])
         Transforms.select(editor, end)
       }
     } catch {
-      // Selection path is invalid, reset to end of document
       try {
         if (editor.children.length > 0) {
           const end = Editor.end(editor, [])
           Transforms.select(editor, end)
         } else {
-          // No content, clear selection
           Transforms.deselect(editor)
         }
       } catch {
-        // If we can't get end, clear selection
         Transforms.deselect(editor)
       }
     }
@@ -191,18 +179,15 @@ function normalizeEditor(editor: CustomEditor) {
 export function SlateEditor({ value, onChange, placeholder = "Start writing...", className }: SlateEditorProps) {
   const editor = useMemo(() => {
     const e = withHistory(withReact(createEditor()))
-    // Add normalization to fix invalid states
     const { normalizeNode } = e
     e.normalizeNode = (entry) => {
       const [node, path] = entry
       
-      // Ensure all elements have valid children
       if (SlateElement.isElement(node) && node.children.length === 0) {
         Transforms.removeNodes(e, { at: path })
         return
       }
       
-      // Call default normalization
       normalizeNode(entry)
     }
     return e
@@ -211,7 +196,6 @@ export function SlateEditor({ value, onChange, placeholder = "Start writing...",
 
   const [internalValue, setInternalValue] = useState<Descendant[]>(() => normalizeSlateContent(value))
 
-  // Sync incoming value changes (only from external sources, not our own changes)
   useEffect(() => {
     if (isInternalChangeRef.current) {
       isInternalChangeRef.current = false
@@ -223,30 +207,24 @@ export function SlateEditor({ value, onChange, placeholder = "Start writing...",
     const newKey = JSON.stringify(normalized)
     
     if (currentKey !== newKey) {
-      // Update editor state outside of React's render cycle
       const timeoutId = setTimeout(() => {
         try {
-          // Use Transforms to safely update editor content
-          // First, remove all existing nodes
           const childrenLength = editor.children.length
           for (let i = childrenLength - 1; i >= 0; i--) {
             Transforms.removeNodes(editor, { at: [i] })
           }
           
-          // Then insert the new normalized content
           if (normalized.length > 0) {
             Transforms.insertNodes(editor, normalized, { at: [0] })
           } else {
             Transforms.insertNodes(editor, DEFAULT_SLATE_VALUE, { at: [0] })
           }
           
-          // Normalize to fix any invalid selections
           normalizeEditor(editor)
           editor.onChange()
           setInternalValue(normalized.length > 0 ? normalized : DEFAULT_SLATE_VALUE)
         } catch (error) {
           console.error("Error updating editor:", error)
-          // Fallback: reset to default using Transforms
           try {
             const childrenLength = editor.children.length
             for (let i = childrenLength - 1; i >= 0; i--) {
@@ -255,8 +233,8 @@ export function SlateEditor({ value, onChange, placeholder = "Start writing...",
             Transforms.insertNodes(editor, DEFAULT_SLATE_VALUE, { at: [0] })
             normalizeEditor(editor)
             editor.onChange()
-          } catch {
-            // If transforms fail, just update state
+          } catch (error) {
+            console.debug('Error resetting editor:', error)
           }
           setInternalValue(DEFAULT_SLATE_VALUE)
         }
@@ -271,7 +249,6 @@ export function SlateEditor({ value, onChange, placeholder = "Start writing...",
         const safeValue =
           Array.isArray(newValue) && newValue.length > 0 ? (newValue as Descendant[]) : DEFAULT_SLATE_VALUE
 
-        // Normalize selection before updating
         normalizeEditor(editor)
 
         isInternalChangeRef.current = true
@@ -279,15 +256,13 @@ export function SlateEditor({ value, onChange, placeholder = "Start writing...",
         onChange(safeValue)
       } catch (error) {
         console.error("Error in handleChange:", error)
-        // Reset to safe state using Transforms
         const safeValue = DEFAULT_SLATE_VALUE
         try {
-          // Remove all nodes and insert safe value
           Transforms.removeNodes(editor, { at: [0] })
           Transforms.insertNodes(editor, safeValue, { at: [0] })
           normalizeEditor(editor)
-        } catch {
-          // If transforms fail, just update state
+        } catch (error) {
+          console.debug('Error recovering editor:', error)
         }
         isInternalChangeRef.current = true
         setInternalValue(safeValue)
@@ -300,12 +275,10 @@ export function SlateEditor({ value, onChange, placeholder = "Start writing...",
   return (
     <div className={cn("border rounded-lg flex flex-col w-full", className)} style={{ minHeight: '900px' }}>
       <Slate editor={editor} initialValue={internalValue} onChange={handleChange}>
-        {/* Toolbar - Fixed height, inside Slate context */}
         <div className="flex items-center gap-1 p-2 border-b bg-muted/30 flex-shrink-0 min-h-[40px]">
           <ToolbarButtons />
         </div>
 
-        {/* Editor - Fixed height, no resizing */}
         <div className="flex-1 min-h-0" style={{ minHeight: '860px' }}>
           <Editable
             renderLeaf={Leaf}
@@ -324,7 +297,6 @@ export function SlateEditor({ value, onChange, placeholder = "Start writing...",
   )
 }
 
-// Toolbar buttons component that uses useSlate hook (must be inside Slate context)
 function ToolbarButtons() {
   const editor = useSlate()
   
@@ -376,7 +348,6 @@ function ToolbarButtons() {
 
   return (
     <div className="flex items-center gap-1 flex-wrap">
-      {/* Text formatting */}
       <div className="flex items-center gap-1 border-r pr-1 mr-1">
         <FormatButton
           icon={<Bold className="h-4 w-4" />}
@@ -395,7 +366,6 @@ function ToolbarButtons() {
         />
       </div>
 
-      {/* Headings */}
       <div className="flex items-center gap-1 border-r pr-1 mr-1">
         <BlockButton
           format="heading-one"
@@ -411,7 +381,6 @@ function ToolbarButtons() {
         />
       </div>
 
-      {/* Lists */}
       <div className="flex items-center gap-1 border-r pr-1 mr-1">
         <BlockButton
           format="bulleted-list"
@@ -427,7 +396,6 @@ function ToolbarButtons() {
         />
       </div>
 
-      {/* Quote */}
       <BlockButton
         format="block-quote"
         icon={<Quote className="h-4 w-4" />}

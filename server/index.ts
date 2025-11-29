@@ -1,4 +1,3 @@
-// CRITICAL: Load environment variables FIRST before any other imports
 import "./load-env"
 
 import { serve } from "@hono/node-server"
@@ -13,13 +12,12 @@ import profileRouter from "./routes/profile"
 import aiRouter from './routes/ai'
 import uploadRouter from './routes/upload'
 import mediaRouter from './routes/media'
-import organizationRouter from './routes/organization' // Import new route
+import organizationRouter from './routes/organization'
 import notesRouter from './routes/notes'
 
 
 const app = new Hono()
 
-// Middleware
 app.use("*", logger())
 app.use(
   "*",
@@ -29,10 +27,8 @@ app.use(
   }),
 )
 
-// Health check
 app.get("/api/health", (c) => c.json({ status: "ok" }))
 
-// Routes
 app.route("/api/auth", authRouter)
 app.route("/api/posts", postsRouter)
 app.route("/api/calendars", calendarsRouter)
@@ -41,7 +37,7 @@ app.route("/api/profile", profileRouter)
 app.route('/api/ai', aiRouter)
 app.route('/api/upload', uploadRouter)
 app.route('/api/media', mediaRouter)
-app.route('/api/organization', organizationRouter) // Add new route
+app.route('/api/organization', organizationRouter)
 app.route('/api/notes', notesRouter)
 
 

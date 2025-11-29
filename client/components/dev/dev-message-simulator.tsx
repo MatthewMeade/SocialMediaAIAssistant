@@ -45,7 +45,6 @@ export function DevMessageSimulator({ open, onOpenChange, calendarId }: DevMessa
         liked: false,
       })
 
-      // Reset form
       setContent("")
       setPostCaption("")
       onOpenChange(false)

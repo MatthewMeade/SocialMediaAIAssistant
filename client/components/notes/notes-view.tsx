@@ -35,7 +35,6 @@ export function NotesView({ calendarId }: NotesViewProps) {
     return notes.find((note) => note.id === selectedNoteId) ?? null
   }, [notes, selectedNoteId])
 
-  // Ensure there's always a valid selection when notes load or change
   useEffect(() => {
     if (!notes.length) {
       setSelectedNoteId(null)
@@ -46,7 +45,6 @@ export function NotesView({ calendarId }: NotesViewProps) {
     }
   }, [notes, selectedNoteId])
 
-  // Update AI context when noteId changes
   useEffect(() => {
     if (selectedNoteId) {
       setClientContext("notes", { noteId: selectedNoteId })
@@ -55,7 +53,6 @@ export function NotesView({ calendarId }: NotesViewProps) {
     }
   }, [selectedNoteId, setClientContext])
 
-  // Update editable draft when the active note changes
   useEffect(() => {
     if (!activeNote) {
       setTitle("")
@@ -66,7 +63,6 @@ export function NotesView({ calendarId }: NotesViewProps) {
     setContent(activeNote.content || null)
   }, [activeNote])
 
-  // Auto-save function with debouncing
   const debouncedSave = useCallback(
     (slateContent: any) => {
       if (!selectedNoteId) return
@@ -94,13 +90,11 @@ export function NotesView({ calendarId }: NotesViewProps) {
     [selectedNoteId, title, notes, updateNote],
   )
 
-  // Handle content changes from Slate editor
   const handleContentChange = useCallback((slateContent: any) => {
     setContent(slateContent)
     debouncedSave(slateContent)
   }, [debouncedSave])
 
-  // Cleanup timeout on unmount
   useEffect(() => {
     return () => {
       if (saveTimeoutRef.current) {
@@ -109,7 +103,6 @@ export function NotesView({ calendarId }: NotesViewProps) {
     }
   }, [])
 
-  // Persist draft title/content when they diverge from the server state
   useEffect(() => {
     if (!selectedNoteId || !activeNote) return
 

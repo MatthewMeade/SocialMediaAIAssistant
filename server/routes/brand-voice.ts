@@ -10,7 +10,6 @@ type Variables = {
 
 const app = new Hono<{ Variables: Variables }>()
 
-// Middleware to load and validate user
 app.use('*', requireAuth)
 
 app.get("/", async (c) => {
@@ -116,7 +115,6 @@ app.delete("/", async (c) => {
     return c.json({ error: "Rule ID required" }, 400)
   }
 
-  // First get the rule to check calendar access
   const { data: rule, error: ruleError } = await supabase
     .from("brand_rules")
     .select("calendar_id")

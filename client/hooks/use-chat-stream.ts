@@ -1,4 +1,3 @@
-// client/hooks/use-chat-stream.ts
 import { useEffect, useRef, useCallback } from 'react';
 import { supabase } from '@/lib/supabase/client';
 import type { StreamEventPayload } from '../../shared/stream-types';
@@ -15,24 +14,20 @@ export function useChatStream({ threadId, onToken, onStatusChange }: UseChatStre
   const connect = useCallback(async () => {
     if (!threadId) return;
     
-    // Cleanup previous connection if exists
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
     }
 
-    // Create new AbortController for this connection
     const abortController = new AbortController();
     abortControllerRef.current = abortController;
 
     try {
-      // Get auth token
       const { data: { session } } = await supabase.auth.getSession();
       if (!session?.access_token) {
-        console.error('[useChatStream] No auth token available');
+        console.error('No auth token available');
         return;
       }
 
-      // Use fetch with streaming to support Authorization header
       const response = await fetch(`/api/ai/stream/${threadId}`, {
         method: 'GET',
         headers: {
@@ -43,17 +38,16 @@ export function useChatStream({ threadId, onToken, onStatusChange }: UseChatStre
       });
 
       if (!response.ok) {
-        console.error('[useChatStream] Response not ok:', response.status, response.statusText);
+        console.error('Response not ok:', response.status, response.statusText);
         return;
       }
 
-      // Parse SSE stream
       const reader = response.body?.getReader();
       const decoder = new TextDecoder();
       let buffer = '';
 
       if (!reader) {
-        console.error('[useChatStream] No reader available');
+        console.error('No reader available');
         return;
       }
 
@@ -64,25 +58,19 @@ export function useChatStream({ threadId, onToken, onStatusChange }: UseChatStre
           break;
         }
 
-        // Decode chunk and add to buffer
         buffer += decoder.decode(value, { stream: true });
 
-        // Process complete SSE messages (separated by \n\n)
         const messages = buffer.split('\n\n');
-        buffer = messages.pop() || ''; // Keep incomplete message in buffer
+        buffer = messages.pop() || '';
 
         for (const message of messages) {
           if (!message.trim()) continue;
 
-          let eventType = 'message'; // Default event type
           let data = '';
 
-          // Parse SSE message format: event: <type>\ndata: <json>
           const lines = message.split('\n');
           for (const line of lines) {
-            if (line.startsWith('event: ')) {
-              eventType = line.slice(7).trim();
-            } else if (line.startsWith('data: ')) {
+            if (line.startsWith('data: ')) {
               data = line.slice(6).trim();
             }
           }
@@ -91,7 +79,6 @@ export function useChatStream({ threadId, onToken, onStatusChange }: UseChatStre
             try {
               const payload = JSON.parse(data) as StreamEventPayload;
               
-              // Handle based on payload type
               switch (payload.type) {
                 case 'token':
                   if (payload.content) onToken(payload.content);
@@ -102,21 +89,16 @@ export function useChatStream({ threadId, onToken, onStatusChange }: UseChatStre
                 case 'status_end':
                   onStatusChange(null);
                   break;
-                case 'connected':
-                  console.log('[useChatStream] Connected to stream');
-                  break;
               }
             } catch (err) {
-              console.error('[useChatStream] Stream parse error', err, 'Data:', data);
+              console.error('Stream parse error', err, 'Data:', data);
             }
           }
         }
       }
     } catch (err: any) {
-      if (err.name === 'AbortError') {
-        console.log('[useChatStream] Stream aborted');
-      } else {
-        console.error('[useChatStream] Stream error', err);
+      if (err.name !== 'AbortError') {
+        console.error('Stream error', err);
       }
     }
   }, [threadId, onToken, onStatusChange]);
@@ -128,7 +110,6 @@ export function useChatStream({ threadId, onToken, onStatusChange }: UseChatStre
     }
   }, []);
 
-  // Cleanup on unmount
   useEffect(() => {
     return () => disconnect();
   }, [disconnect]);

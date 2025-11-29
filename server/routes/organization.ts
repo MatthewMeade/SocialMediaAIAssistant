@@ -79,18 +79,10 @@ app.get("/", async (c) => {
     })
 
   } catch (error: any) {
-
-    console.error("[ORG_ROUTE] Error fetching organization:", error)
-
+    console.error("Error fetching organization:", error)
     return c.json({ error: error.message || "Failed to fetch organization" }, 500)
-
   }
-
 })
-
-
-
-// Get members of the user's organization
 
 app.get("/members", async (c) => {
 
@@ -103,10 +95,6 @@ app.get("/members", async (c) => {
   }
 
   const user = authResult
-
-
-
-  // First, get the user's organization
 
   const { data: org, error: orgError } = await supabase
 
@@ -133,18 +121,10 @@ app.get("/members", async (c) => {
     return c.json(members)
 
   } catch (error: any) {
-
-    console.error("[ORG_ROUTE] Error fetching members:", error)
-
+    console.error("Error fetching members:", error)
     return c.json({ error: error.message || "Failed to fetch members" }, 500)
-
   }
-
 })
-
-
-
-// Invite a new member
 
 app.post("/members", async (c) => {
 
@@ -161,10 +141,6 @@ app.post("/members", async (c) => {
 
 
   const { organizationId, email, role } = await c.req.json()
-
-
-
-  // Verify user is owner of this org
 
   const { data: org, error: orgError } = await supabase
 
@@ -193,18 +169,10 @@ app.post("/members", async (c) => {
     return c.json(result)
 
   } catch (error: any) {
-
-    console.error("[ORG_ROUTE] Error inviting member:", error)
-
+    console.error("Error inviting member:", error)
     return c.json({ error: error.message || "Failed to invite member" }, 500)
-
   }
-
 })
-
-
-
-// Remove a member
 
 app.delete("/members", async (c) => {
 
@@ -222,17 +190,9 @@ app.delete("/members", async (c) => {
 
   const { memberId } = c.req.query()
 
-
-
   if (!memberId) {
-
     return c.json({ error: "memberId is required" }, 400)
-
   }
-
-
-
-  // Verify user is owner of the org this member belongs to
 
   const { data: member, error: memberError } = await supabase
 
@@ -277,13 +237,9 @@ app.delete("/members", async (c) => {
     return c.json({ success: true })
 
   } catch (error: any) {
-
-    console.error("[ORG_ROUTE] Error removing member:", error)
-
+    console.error("Error removing member:", error)
     return c.json({ error: error.message || "Failed to remove member" }, 500)
-
   }
-
 })
 
 

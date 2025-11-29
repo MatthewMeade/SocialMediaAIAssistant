@@ -7,10 +7,6 @@ import type { DallEAPIWrapper } from '@langchain/openai'
 import { getBrandVoiceScore } from './grading-service'
 import { generateCaptions, applySuggestions } from './generation-service'
 
-/**
- * Context schema for tools - passed via LangChain runtime.
- * This context is validated at the route level before being passed to the agent.
- */
 export const toolContextSchema = z.object({
   userId: z.string(),
   calendarId: z.string(),
@@ -18,9 +14,6 @@ export const toolContextSchema = z.object({
 
 export type ToolContext = z.infer<typeof toolContextSchema>
 
-/**
- * Dependencies injected into the ToolService.
- */
 export interface ToolServiceDependencies {
   repo: IAiDataRepository
   chatModel: BaseChatModel
@@ -28,15 +21,6 @@ export interface ToolServiceDependencies {
   imageGenerator: DallEAPIWrapper
 }
 
-/**
- * The ToolService provides AI tools for the chatbot.
- * 
- * All tools receive context via LangChain's runtime feature, ensuring
- * stateless, testable, and reusable tool implementations.
- * 
- * Database write operations are NOT included here - they should be handled
- * by API routes directly using the repository or database functions.
- */
 export class ToolService {
   private dependencies: ToolServiceDependencies
 
@@ -44,21 +28,11 @@ export class ToolService {
     this.dependencies = dependencies
   }
 
-  // ============================================================================
-  // STANDARD METHODS (Used by API routes)
-  // ============================================================================
-
-  /**
-   * Applies suggestions to a caption using AI.
-   * This is an AI service method (not a database write), used by API routes.
-   * Authorization is handled by the repository.
-   */
   async applySuggestionsToCaption(
     caption: string,
     suggestions: string[],
     _context: ToolContext,
   ): Promise<string> {
-    // Repository handles auth internally
     return applySuggestions(
       caption,
       suggestions,
@@ -66,40 +40,25 @@ export class ToolService {
     )
   }
 
-  // ============================================================================
-  // AI TOOL FACTORY METHODS (Used by ChatService)
-  // ============================================================================
-
-  /**
-   * Creates a read-only tool for fetching posts.
-   * The tool receives context via runtime parameter.
-   */
   createGetPostsTool() {
     return tool(
       async (_input: {}, runtime: ToolRuntime<{}, typeof toolContextSchema>) => {
-        console.log('[Performance] Starting tool: get_posts');
-        console.time('[Performance] tool: get_posts');
-        
         try {
           const context = runtime.context
           if (!context) {
             throw new Error('Context is required')
           }
 
-          // Repository handles auth internally
           const posts = await this.dependencies.repo.getPosts()
-          // Return a simplified representation for the AI
-          const result = posts.map((p) => ({
+          return posts.map((p) => ({
             id: p.id,
             caption: p.caption,
             date: p.date.toISOString(),
             platform: p.platform,
             status: p.status,
           }))
-          console.timeEnd('[Performance] tool: get_posts');
-          return result;
         } catch (error) {
-          console.timeEnd('[Performance] tool: get_posts');
+          console.log('createGetPostsTool', { error })
           throw error;
         }
       },
@@ -112,38 +71,26 @@ export class ToolService {
     )
   }
 
-  /**
-   * Creates a tool for getting the current post details.
-   * Useful when the user is viewing/editing a specific post.
-   */
   createGetCurrentPostTool(postId?: string) {
     return tool(
       async (_input: {}, runtime: ToolRuntime<{}, typeof toolContextSchema>) => {
-        console.log('[Performance] Starting tool: get_current_post');
-        console.time('[Performance] tool: get_current_post');
-        
         try {
           const context = runtime.context
           if (!context) {
             throw new Error('Context is required')
           }
 
-          // Use provided postId or try to get from context if available
           const targetPostId = postId
           if (!targetPostId) {
-            console.timeEnd('[Performance] tool: get_current_post');
             return { error: 'No post ID provided' }
           }
 
-          // Repository handles auth and verifies post belongs to calendar
           const post = await this.dependencies.repo.getPost(targetPostId)
           if (!post) {
-            console.timeEnd('[Performance] tool: get_current_post');
             return { error: 'Post not found' }
           }
 
-          // Return full post details for the AI
-          const result = {
+          return {
             id: post.id,
             caption: post.caption,
             date: post.date.toISOString(),
@@ -152,10 +99,8 @@ export class ToolService {
             images: post.images,
             authorName: post.authorName,
           }
-          console.timeEnd('[Performance] tool: get_current_post');
-          return result;
         } catch (error) {
-          console.timeEnd('[Performance] tool: get_current_post');
+          console.log('createGetCurrentPostTool', { error })
           throw error;
         }
       },
@@ -168,10 +113,6 @@ export class ToolService {
     )
   }
 
-  /**
-   * Creates a tool for generating captions.
-   * The tool receives context via runtime parameter.
-   */
   createGenerateCaptionTool() {
     return tool(
       async (
@@ -181,16 +122,12 @@ export class ToolService {
         },
         runtime: ToolRuntime<{}, typeof toolContextSchema>,
       ) => {
-        console.log('[Performance] Starting tool: generate_caption');
-        console.time('[Performance] tool: generate_caption');
-        
         try {
           const context = runtime.context
           if (!context) {
             throw new Error('Context is required')
           }
 
-          // Repository handles auth internally
           const brandRules = await this.dependencies.repo.getBrandRules()
 
           const result = await generateCaptions(
@@ -200,19 +137,15 @@ export class ToolService {
             },
             brandRules,
             this.dependencies.creativeModel,
-            (caption, rules) =>
-              getBrandVoiceScore(caption, rules, this.dependencies.chatModel),
           )
 
-          const toolResult = {
+          return {
             caption: result.caption,
-            score: result.score?.overall ?? null,
-            suggestions: result.score?.suggestions ?? [],
+            score: null,
+            suggestions: [],
           }
-          console.timeEnd('[Performance] tool: generate_caption');
-          return toolResult;
         } catch (error) {
-          console.timeEnd('[Performance] tool: generate_caption');
+          console.log('createGenerateCaptionTool', { error })
           throw error;
         }
       },
@@ -231,39 +164,26 @@ export class ToolService {
     )
   }
 
-  /**
-   * Creates a client-side "suggestion" tool for applying a caption to a post.
-   * This tool returns `returnDirect: true`, so the client receives the suggestion
-   * and applies it via the event bus.
-   */
   createApplyCaptionTool() {
     return tool(
       async (
         input: { postId: string; caption: string },
         runtime: ToolRuntime<{}, typeof toolContextSchema>,
       ) => {
-        console.log('[Performance] Starting tool: apply_caption_to_open_post');
-        console.time('[Performance] tool: apply_caption_to_open_post');
-        
         try {
           const context = runtime.context
           if (!context) {
             throw new Error('Context is required')
           }
 
-          // Repository handles auth and verifies post belongs to calendar
           const post = await this.dependencies.repo.getPost(input.postId)
           if (!post) {
             throw new Error('Post not found')
           }
 
-          // This is a suggestion tool - the actual write happens on the client
-          // We just return a message that the client will handle
-          const result = `Caption suggestion ready for post ${input.postId}. The client will apply this change.`;
-          console.timeEnd('[Performance] tool: apply_caption_to_open_post');
-          return result;
+          return `Caption suggestion ready for post ${input.postId}. The client will apply this change.`;
         } catch (error) {
-          console.timeEnd('[Performance] tool: apply_caption_to_open_post');
+          console.log('createApplyCaptionTool', { error })
           throw error;
         }
       },
@@ -280,31 +200,20 @@ export class ToolService {
     )
   }
 
-  /**
-   * Creates a client-side navigation tool.
-   * This tool returns `returnDirect: true`, so the client receives the navigation instruction.
-   */
   createNavigateToPageTool() {
     return tool(
       async (
         input: { page?: string; label?: string },
         runtime: ToolRuntime<{}, typeof toolContextSchema>,
       ) => {
-        console.log('[Performance] Starting tool: navigate_to_calendar');
-        console.time('[Performance] tool: navigate_to_calendar');
-        
         try {
-          // Verify context exists (no auth needed for navigation)
           if (!runtime.context) {
             throw new Error('Context is required')
           }
 
-          // This is a client-side tool - the actual navigation happens on the client
-          const result = `Navigation requested to ${input.page || 'calendar'}. The client will handle this.`;
-          console.timeEnd('[Performance] tool: navigate_to_calendar');
-          return result;
+          return `Navigation requested to ${input.page || 'calendar'}. The client will handle this.`;
         } catch (error) {
-          console.timeEnd('[Performance] tool: navigate_to_calendar');
+          console.log('createNavigateToPageTool', { error })
           throw error;
         }
       },
@@ -324,36 +233,26 @@ export class ToolService {
     )
   }
 
-  /**
-   * Creates a tool for getting brand voice rules.
-   * Useful when the AI needs to reference brand rules.
-   */
   createGetBrandRulesTool() {
     return tool(
       async (_input: {}, runtime: ToolRuntime<{}, typeof toolContextSchema>) => {
-        console.log('[Performance] Starting tool: get_brand_rules');
-        console.time('[Performance] tool: get_brand_rules');
-        
         try {
           const context = runtime.context
           if (!context) {
             throw new Error('Context is required')
           }
 
-          // Repository handles auth internally
           const rules = await this.dependencies.repo.getBrandRules()
           const enabledRules = rules.filter((r) => r.enabled)
           
           if (enabledRules.length === 0) {
-            const result = {
+            return {
               message: 'No active brand voice rules are configured.',
               rules: [],
             }
-            console.timeEnd('[Performance] tool: get_brand_rules');
-            return result;
           }
 
-          const result = {
+          return {
             rules: enabledRules.map((r) => ({
               id: r.id,
               title: r.title,
@@ -361,10 +260,8 @@ export class ToolService {
             })),
             total: enabledRules.length,
           }
-          console.timeEnd('[Performance] tool: get_brand_rules');
-          return result;
         } catch (error) {
-          console.timeEnd('[Performance] tool: get_brand_rules');
+          console.log('createGetBrandRulesTool', { error })
           throw error;
         }
       },
@@ -377,26 +274,18 @@ export class ToolService {
     )
   }
 
-  /**
-   * Creates a tool for grading a caption against brand voice rules.
-   * Useful when the AI needs to evaluate an existing caption.
-   */
   createGradeCaptionTool() {
     return tool(
       async (
         input: { caption: string },
         runtime: ToolRuntime<{}, typeof toolContextSchema>,
       ) => {
-        console.log('[Performance] Starting tool: grade_caption');
-        console.time('[Performance] tool: grade_caption');
-        
         try {
           const context = runtime.context
           if (!context) {
             throw new Error('Context is required')
           }
 
-          // Repository handles auth internally
           const brandRules = await this.dependencies.repo.getBrandRules()
 
           const score = await getBrandVoiceScore(
@@ -405,16 +294,14 @@ export class ToolService {
             this.dependencies.chatModel,
           )
 
-          const result = {
+          return {
             overall: score.overall,
             rules: score.rules,
             suggestions: score.suggestions,
             message: `Caption scored ${score.overall}/100. ${score.suggestions.length} suggestion(s) provided.`,
           }
-          console.timeEnd('[Performance] tool: grade_caption');
-          return result;
         } catch (error) {
-          console.timeEnd('[Performance] tool: grade_caption');
+          console.log('createGradeCaptionTool', { error })
           throw error;
         }
       },
@@ -429,31 +316,20 @@ export class ToolService {
     )
   }
 
-  /**
-   * Creates a client-side tool for creating a new post on a specific date.
-   * This tool returns `returnDirect: true`, so the client receives the instruction.
-   */
   createCreatePostTool() {
     return tool(
       async (
         input: { date: string; label?: string },
         runtime: ToolRuntime<{}, typeof toolContextSchema>,
       ) => {
-        console.log('[Performance] Starting tool: create_post');
-        console.time('[Performance] tool: create_post');
-        
         try {
-          // Verify context exists (no auth needed for client-side tool)
           if (!runtime.context) {
             throw new Error('Context is required')
           }
 
-          // This is a client-side tool - the actual post creation happens on the client
-          const result = `Post creation requested for ${input.date}. The client will open the post editor.`;
-          console.timeEnd('[Performance] tool: create_post');
-          return result;
+          return `Post creation requested for ${input.date}. The client will open the post editor.`;
         } catch (error) {
-          console.timeEnd('[Performance] tool: create_post');
+          console.log('createCreatePostTool', { error })
           throw error;
         }
       },
@@ -477,37 +353,26 @@ export class ToolService {
     )
   }
 
-  /**
-   * Creates a client-side tool for opening an existing post.
-   * This tool returns `returnDirect: true`, so the client receives the instruction.
-   */
   createOpenPostTool() {
     return tool(
       async (
         input: { postId: string; label?: string },
         runtime: ToolRuntime<{}, typeof toolContextSchema>,
       ) => {
-        console.log('[Performance] Starting tool: open_post');
-        console.time('[Performance] tool: open_post');
-        
         try {
           const context = runtime.context
           if (!context) {
             throw new Error('Context is required')
           }
 
-          // Repository handles auth and verifies post belongs to calendar
           const post = await this.dependencies.repo.getPost(input.postId)
           if (!post) {
             throw new Error('Post not found')
           }
 
-          // This is a client-side tool - the actual navigation happens on the client
-          const result = `Open post requested for ${input.postId}. The client will open the post editor.`;
-          console.timeEnd('[Performance] tool: open_post');
-          return result;
+          return `Open post requested for ${input.postId}. The client will open the post editor.`;
         } catch (error) {
-          console.timeEnd('[Performance] tool: open_post');
+          console.log('createOpenPostTool', { error })
           throw error;
         }
       },

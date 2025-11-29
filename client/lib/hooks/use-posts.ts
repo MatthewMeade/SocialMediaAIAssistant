@@ -16,7 +16,6 @@ export function usePosts(calendarId: string) {
 
   const createMutation = useMutation({
     mutationFn: async (post: Omit<Post, "id">) => {
-      // Serialize the date to ISO string for the API
       const postToSend = {
         ...post,
         date: post.date instanceof Date ? post.date.toISOString() : post.date,
@@ -36,10 +35,8 @@ export function usePosts(calendarId: string) {
       return { previousPosts, tempId }
     },
     onSuccess: (newPost, _variables, context) => {
-      // Replace the temp post with the real one
       queryClient.setQueryData<Post[]>(["posts", calendarId], (old = []) => {
         if (!old) return [newPost]
-        // Remove temp post and add the real one
         return old.filter((p) => p.id !== context?.tempId).concat(newPost)
       })
     },
@@ -49,14 +46,12 @@ export function usePosts(calendarId: string) {
       }
     },
     onSettled: () => {
-      // Still invalidate to ensure we have the latest data
       queryClient.invalidateQueries({ queryKey: ["posts", calendarId] })
     },
   })
 
   const updateMutation = useMutation({
     mutationFn: async (post: Post) => {
-      // Serialize the date to ISO string for the API
       const postToSend = {
         ...post,
         date: post.date instanceof Date ? post.date.toISOString() : post.date,

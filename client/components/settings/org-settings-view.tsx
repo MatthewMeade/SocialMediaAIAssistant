@@ -21,7 +21,6 @@ export function OrgSettingsView({ organization, currentUserId }: OrgSettingsView
   const [inviteRole, _setInviteRole] = useState<"admin" | "member">("member")
   const [inviting, setInviting] = useState(false)
 
-  // Use the new hook for data
   const {
     members,
     isLoadingMembers,

@@ -17,7 +17,6 @@ export function usePostAutoSave({ post, onSave, debounceMs = 500 }: UsePostAutoS
   const lastSavedPostRef = useRef<string | null>(null)
   const previousPostIdRef = useRef<string | null>(null)
 
-  // Helper to create a stable string representation of post for comparison
   const getPostKey = (p: Post) => {
     const postDate = p.date instanceof Date ? p.date : new Date(p.date)
     return JSON.stringify({
@@ -39,27 +38,19 @@ export function usePostAutoSave({ post, onSave, debounceMs = 500 }: UsePostAutoS
     }
 
     const currentPostKey = getPostKey(post)
-    
-    // If the post ID changed from empty to a real ID (new post was just created),
-    // update the saved ref to the new key to prevent unnecessary saves
+
     const previousId = previousPostIdRef.current
     if ((!previousId || previousId === "") && post.id && post.id !== "") {
-      // Post just got an ID after being created, update the saved ref
       lastSavedPostRef.current = currentPostKey
       previousPostIdRef.current = post.id
       return
     }
-    
-    // Update the previous ID ref
+
     previousPostIdRef.current = post.id || null
 
-    // Check if post actually changed from what we last saved
     if (currentPostKey === lastSavedPostRef.current) {
-      return // No changes, don't save
+      return
     }
-
-    // For posts without an ID, we still want to save them (they'll be created)
-    // The onSave handler should handle both create and update
 
     if (saveTimeoutRef.current) {
       clearTimeout(saveTimeoutRef.current)
@@ -67,19 +58,16 @@ export function usePostAutoSave({ post, onSave, debounceMs = 500 }: UsePostAutoS
 
     saveTimeoutRef.current = setTimeout(async () => {
       const postKeyBeforeSave = getPostKey(post)
-      
-      console.log("[v0] Auto-saving post changes...", { postId: post.id, hasId: !!post.id })
+
       setIsSaving(true)
       lastLocalUpdateRef.current = Date.now()
 
       try {
         await onSave(post)
         setLastSaved(new Date())
-        // Update with the current post key (which may have changed if it was a new post that got an ID)
-        // The post prop will be updated by the parent component after save
         lastSavedPostRef.current = postKeyBeforeSave
       } catch (error) {
-        console.error("[v0] Error auto-saving:", error)
+        console.error("Error auto-saving:", error)
       } finally {
         setIsSaving(false)
       }
@@ -90,15 +78,7 @@ export function usePostAutoSave({ post, onSave, debounceMs = 500 }: UsePostAutoS
         clearTimeout(saveTimeoutRef.current)
       }
     }
-  }, [
-    post.id,
-    post.caption,
-    post.platform,
-    post.date,
-    post.images,
-    post.status,
-    onSave,
-  ])
+  }, [post.id, post.caption, post.platform, post.date, post.images, post.status, onSave, debounceMs, post])
 
   const formatLastSaved = () => {
     if (!lastSaved) return null

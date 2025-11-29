@@ -1,4 +1,3 @@
-// server/ai-service/stream-manager.ts
 import { EventEmitter } from 'events';
 import type { StreamEventPayload } from '../../shared/stream-types';
 
@@ -15,5 +14,3 @@ class StreamManager extends EventEmitter {
 }
 
 export const streamManager = new StreamManager();
-
-

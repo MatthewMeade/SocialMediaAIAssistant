@@ -41,7 +41,6 @@ export function PostEditor({
   const lastSavedPostKeyRef = useRef<string | null>(null)
   const isInitialMount = useRef(true)
 
-  // Helper to create a stable string representation of post for comparison
   const getPostKey = useCallback((p: Post) => {
     const postDate = p.date instanceof Date ? p.date : new Date(p.date)
     return JSON.stringify({
@@ -54,13 +53,11 @@ export function PostEditor({
     })
   }, [])
 
-  // Track when we save so we can distinguish our own updates from remote ones
   const handleSaveWrapper = useCallback(async (postToSave: Post) => {
     lastSavedPostKeyRef.current = getPostKey(postToSave)
     await onSave(postToSave)
   }, [onSave, getPostKey])
 
-  // Custom hooks
   const { brandScore, isFetchingScore, fetchScoreIfNeeded } = useBrandScore(
     editedPost.caption,
     editedPost.calendarId
@@ -86,47 +83,36 @@ export function PostEditor({
       }) => apiPost<{ newCaption: string }>(ApiRoutes.AI.APPLY_SUGGESTIONS, data),
       onSuccess: (data) => {
         handleUpdate({ caption: data.newCaption })
-        // Trigger brand score fetch for the updated caption
         if (editedPost.calendarId) {
           fetchScoreIfNeeded(data.newCaption, editedPost.calendarId)
         }
       },
       onError: (error) => {
         console.error("Error applying suggestions:", error)
-        // You could add a toast notification here
       },
     })
 
-  // Dispatch event when post editor opens/closes
   useEffect(() => {
-    // Dispatch open event when component mounts or post changes
-    // Only dispatch if post has an ID (not a new post)
     if (post.id && post.id !== '') {
       appEventBus.dispatch(AppEvents.POST_EDITOR_OPEN, { postId: post.id })
     }
 
     return () => {
-      // Dispatch close event when component unmounts
       if (post.id && post.id !== '') {
         appEventBus.dispatch(AppEvents.POST_EDITOR_CLOSE, {})
       }
     }
   }, [post.id])
 
-  // Listen for caption application events from the AI chat
   useAppEvent<{ postId: string; caption: string }>(
     AppEvents.APPLY_CAPTION,
     (event) => {
-      // Apply if this event is for the current post
-      // For new posts, we accept any apply-caption event since there's only one post open
-      // For existing posts, match by ID
       const isCurrentPost = event.postId === editedPost.id || 
                            editedPost.id.startsWith('temp-') ||
-                           !editedPost.id // Also accept if post has no ID yet
+                           !editedPost.id
       
       if (isCurrentPost) {
         handleUpdate({ caption: event.caption })
-        // Trigger brand score fetch for the new caption
         if (editedPost.calendarId) {
           fetchScoreIfNeeded(event.caption, editedPost.calendarId)
         }
@@ -150,20 +136,16 @@ export function PostEditor({
 
     const currentPostKey = getPostKey(post)
     
-    // Skip if this is the same post we already have synced
     if (currentPostKey === lastSyncedPostRef.current) {
       return
     }
 
-    // Check if this is our own save (the post key matches what we just saved)
     if (currentPostKey === lastSavedPostKeyRef.current) {
-      // It's our own update, just sync the key without updating editedPost
       lastSyncedPostRef.current = currentPostKey
-      lastSavedPostKeyRef.current = null // Clear after syncing
+      lastSavedPostKeyRef.current = null
       return
     }
 
-    // This is a remote update (not our own save)
     if (checkForRemoteUpdate(post)) {
       const normalizedPost = {
         ...post,
@@ -176,7 +158,6 @@ export function PostEditor({
         fetchScoreIfNeeded(post.caption, post.calendarId)
       }
     } else {
-      // Not a remote update, just sync the key
       lastSyncedPostRef.current = currentPostKey
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -255,7 +236,6 @@ export function PostEditor({
               caption={editedPost.caption}
               onCaptionChange={(caption) => {
                 handleUpdate({ caption })
-                // Trigger brand score recalculation when caption changes
                 if (editedPost.calendarId && caption) {
                   fetchScoreIfNeeded(caption, editedPost.calendarId)
                 }

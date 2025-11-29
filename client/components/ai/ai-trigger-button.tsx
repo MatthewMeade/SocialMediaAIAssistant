@@ -1,10 +1,11 @@
 import { Sparkles } from "lucide-react"
-import { Button, ButtonProps } from "@/components/ui/button"
+import { Button, buttonVariants } from "@/components/ui/button"
+import type { VariantProps } from "class-variance-authority"
 import { appEventBus } from "@/lib/event-bus"
 import { AppEvents } from "@/lib/events"
 import { cn } from "@/lib/utils"
 
-interface AITriggerButtonProps extends ButtonProps {
+type AITriggerButtonProps = React.ComponentProps<'button'> & VariantProps<typeof buttonVariants> & {
   message: string | (() => string) // Static string or dynamic generator
   shouldClear?: boolean
   icon?: React.ElementType
@@ -16,23 +17,22 @@ export function AITriggerButton({
   className, 
   children,
   icon: Icon = Sparkles,
+  onClick,
   ...props 
 }: AITriggerButtonProps) {
   
-  const handleClick = (e: React.MouseEvent) => {
-    // Prevent bubbling if used inside other clickable elements
-    e.stopPropagation();
+  const handleClick = (e: React.MouseEvent<HTMLButtonElement>) => {
+    e.stopPropagation()
     
-    // Resolve message if it's a function
-    const messageText = typeof message === "function" ? message() : message;
+    const messageText = typeof message === "function" ? message() : message
 
     appEventBus.dispatch(AppEvents.TRIGGER_AI_CHAT, {
       message: messageText,
       shouldClear
-    });
+    })
 
-    if (props.onClick) {
-      props.onClick(e);
+    if (onClick) {
+      onClick(e)
     }
   }
 

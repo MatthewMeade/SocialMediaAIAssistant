@@ -3,11 +3,9 @@ import { createClient } from "../supabase/server"
 export async function inviteMember(organizationId: string, email: string, role: "admin" | "member", invitedBy: string) {
   const supabase = await createClient()
 
-  // Check if user already exists
   const { data: existingProfile } = await supabase.from("profiles").select("id").eq("email", email).single()
 
   if (existingProfile) {
-    // User exists, add them directly as a member
     const { data, error } = await supabase
       .from("organization_members")
       .insert({
@@ -21,7 +19,6 @@ export async function inviteMember(organizationId: string, email: string, role: 
     if (error) throw error
     return { type: "direct", data }
   } else {
-    // User doesn't exist, create invitation
     const { data, error } = await supabase
       .from("organization_invitations")
       .insert({

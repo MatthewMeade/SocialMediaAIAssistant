@@ -47,7 +47,6 @@ export function AppSidebar({ calendars, currentCalendar }: AppSidebarProps) {
   const [isCollapsed, setIsCollapsed] = useState(false)
   const [showCreateCalendar, setShowCreateCalendar] = useState(false)
 
-  // Use the new hooks
   const { createCalendar } = useCalendars()
   const { profile } = useProfile()
 

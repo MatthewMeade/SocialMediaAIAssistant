@@ -22,24 +22,17 @@ type Variables = {
 
 const app = new Hono<{ Variables: Variables }>()
 
-// Middleware to load and validate user
 app.use('*', requireAuth)
 
-/**
- * SSE Stream endpoint for real-time chat updates.
- * Client connects to this before sending POST /chat request.
- */
 app.get('/stream/:threadId', (c) => {
   const threadId = c.req.param('threadId')
 
   return streamSSE(c, async (stream) => {
-    // 1. Confirm connection
     await stream.writeSSE({
       data: JSON.stringify({ type: 'connected' }),
       event: 'connected',
     })
 
-    // 2. Subscribe to events for this thread
     const unsubscribe = streamManager.subscribe(threadId, async (payload) => {
       await stream.writeSSE({
         data: JSON.stringify(payload),
@@ -47,7 +40,6 @@ app.get('/stream/:threadId', (c) => {
       })
     })
 
-    // 3. Keep connection alive
     let isOpen = true
     stream.onAbort(() => { 
       isOpen = false
@@ -62,11 +54,8 @@ app.get('/stream/:threadId', (c) => {
   })
 })
 
-/**
- * Endpoint for the Brand Voice Content Grader tool.
- */
 app.post('/grade-caption', async (c) => {
-  const authResult = c.get('authResult') // Get from requireAuth middleware
+  const authResult = c.get('authResult')
   if (!isUser(authResult)) {
     return c.json({ error: 'Unauthorized' }, 401)
   }
@@ -78,11 +67,8 @@ app.post('/grade-caption', async (c) => {
     return c.json({ error: 'caption and calendarId are required' }, 400)
   }
 
-  // Execute: Repository handles auth internally
   try {
     const repo = new LocalDataRepository(user.id, calendarId)
-
-    // Get brand rules and grade the caption
     const brandRules = await repo.getBrandRules()
     const score = await getBrandVoiceScore(
       caption as string,
@@ -91,7 +77,7 @@ app.post('/grade-caption', async (c) => {
     )
     return c.json(score)
   } catch (error: any) {
-    console.error('[AI_ROUTE] Error grading caption:', error)
+    console.error('Error grading caption:', error)
     if (error.message?.includes('Forbidden')) {
       return c.json({ error: 'Forbidden' }, 403)
     }
@@ -99,9 +85,6 @@ app.post('/grade-caption', async (c) => {
   }
 })
 
-/**
- * Endpoint for the Caption Generator tool.
- */
 app.post('/generate-caption', async (c) => {
   const authResult = c.get('authResult')
   if (!isUser(authResult)) {
@@ -118,7 +101,6 @@ app.post('/generate-caption', async (c) => {
     return c.json({ error: 'calendarId and request object are required' }, 400)
   }
 
-  // Execute: Repository handles auth internally
   try {
     const repo = new LocalDataRepository(user.id, calendarId)
     const brandRules = await repo.getBrandRules()
@@ -126,12 +108,11 @@ app.post('/generate-caption', async (c) => {
     const result = await generateCaptions(
       request,
       brandRules,
-      creativeModel,
-      (caption, rules) => getBrandVoiceScore(caption, rules, chatModel),
+      creativeModel
     )
     return c.json(result)
   } catch (error: any) {
-    console.error('[AI_ROUTE] Error generating caption:', error)
+    console.error('Error generating caption:', error)
     if (error.message?.includes('Forbidden')) {
       return c.json({ error: 'Forbidden' }, 403)
     }
@@ -142,9 +123,6 @@ app.post('/generate-caption', async (c) => {
   }
 })
 
-/**
- * Endpoint for the Apply Suggestions tool.
- */
 app.post('/apply-suggestions', async (c) => {
   const authResult = c.get('authResult')
   if (!isUser(authResult)) {
@@ -166,7 +144,6 @@ app.post('/apply-suggestions', async (c) => {
     )
   }
 
-  // Execute: Repository handles auth internally
   try {
     const repo = new LocalDataRepository(user.id, calendarId)
     const toolService = new ToolService({
@@ -183,7 +160,7 @@ app.post('/apply-suggestions', async (c) => {
     )
     return c.json({ newCaption })
   } catch (error: any) {
-    console.error('[AI_ROUTE] Error applying suggestions:', error)
+    console.error('Error applying suggestions:', error)
     if (error.message?.includes('Forbidden')) {
       return c.json({ error: 'Forbidden' }, 403)
     }
@@ -194,9 +171,6 @@ app.post('/apply-suggestions', async (c) => {
   }
 })
 
-/**
- * Endpoint for generating images with AI.
- */
 app.post('/generate-image', async (c) => {
   const authResult = c.get('authResult')
   if (!isUser(authResult)) {
@@ -210,15 +184,10 @@ app.post('/generate-image', async (c) => {
     return c.json({ error: 'calendarId and prompt are required' }, 400)
   }
 
-  // Execute: Verify access before generating image
-  // (Image generation service doesn't use repo, so we check auth here)
   try {
     const repo = new LocalDataRepository(user.id, calendarId)
-    // Verify access by attempting to get brand rules (which checks auth)
     await repo.getBrandRules()
 
-    // Image generation is still handled by the pure service function
-    // This can be moved to ToolService in a future refactor if needed
     const newMediaItem = await generateAndStoreImage(
       prompt,
       calendarId,
@@ -227,7 +196,7 @@ app.post('/generate-image', async (c) => {
     )
     return c.json(newMediaItem)
   } catch (error: any) {
-    console.error('[AI_ROUTE] Error generating image:', error)
+    console.error('Error generating image:', error)
     if (error.message?.includes('Forbidden')) {
       return c.json({ error: 'Forbidden' }, 403)
     }
@@ -238,9 +207,6 @@ app.post('/generate-image', async (c) => {
   }
 })
 
-/**
- * Endpoint to extract brand rules from text
- */
 app.post('/extract-brand-rules', async (c) => {
   const authResult = c.get('authResult')
   if (!isUser(authResult)) {
@@ -257,7 +223,7 @@ app.post('/extract-brand-rules', async (c) => {
     const result = await extractBrandRules(text, chatModel)
     return c.json(result)
   } catch (error: any) {
-    console.error('[AI_ROUTE] Error extracting rules:', error)
+    console.error('Error extracting rules:', error)
     return c.json(
       { error: 'Failed to extract rules', details: error.message },
       500,
@@ -265,11 +231,6 @@ app.post('/extract-brand-rules', async (c) => {
   }
 })
 
-/**
- * Chat endpoint for non-streaming conversations.
- * Returns JSON with response text and optional client-side tool calls.
- * Uses threadId to maintain conversation memory across requests.
- */
 app.post('/chat', async (c) => {
   const authResult = c.get('authResult')
   if (!isUser(authResult)) {
@@ -279,26 +240,17 @@ app.post('/chat', async (c) => {
 
   const { input, calendarId, threadId, clientContext } = await c.req.json()
 
-  // Validate required fields
   if (!calendarId) {
     return c.json({ error: 'calendarId is required' }, 400)
   }
 
-  // Input is required - the frontend should send "The tool action has been completed"
-  // when continuing after a tool execution, rather than sending empty input
   if (input === undefined || input === null || input === '') {
     return c.json({ error: 'input is required' }, 400)
   }
 
   try {
-    console.log(`[AI_ROUTE] Starting chat request for user ${user.id}, calendar ${calendarId}`)
-
-    // Use provided threadId or generate one based on user+calendar
-    // ThreadId is used by frontend to track conversations
     const conversationThreadId = threadId || `${user.id}-${calendarId}`
-    const startTime = Date.now()
 
-    // Instantiate services with repository that handles auth internally
     const repo = new LocalDataRepository(user.id, calendarId)
     const toolService = new ToolService({
       repo,
@@ -314,10 +266,6 @@ app.post('/chat', async (c) => {
       imageGenerator,
     })
 
-    // Run the chat with clientContext to determine which tools are available
-    // Pass tool context (userId, calendarId) via runtime
-    // Ensure calendarId is in clientContext for brand rules loading
-    // MemorySaver handles conversation history via threadId - no need to pass history
     const enrichedClientContext = {
       ...clientContext,
       calendarId: clientContext?.calendarId || calendarId,
@@ -329,9 +277,6 @@ app.post('/chat', async (c) => {
       { userId: user.id, calendarId },
     )
 
-    const duration = Date.now() - startTime
-    console.log(`[AI_ROUTE] Chat completed in ${duration}ms`)
-
     return c.json({
       response: result.response,
       toolCalls: result.toolCalls,
@@ -339,7 +284,7 @@ app.post('/chat', async (c) => {
       traceId: result.traceId
     })
   } catch (error: any) {
-    console.error('[AI_ROUTE] Error in chat agent:', error)
+    console.error('Error in chat agent:', error)
     if (error.message?.includes('Forbidden')) {
       return c.json({ error: 'Forbidden' }, 403)
     }

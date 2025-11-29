@@ -8,7 +8,6 @@ import { useAppContext } from "@/components/layout/app-layout"
 import { useAppEvent } from "@/hooks/use-app-event"
 import { AppEvents } from "@/lib/events"
 import { parseDate } from "./post-editor/utils"
-// import { appEventBus } from "@/lib/event-bus" // Unused
 import type { Post, User } from "@/lib/types"
 
 interface CalendarViewProps {
@@ -28,12 +27,8 @@ export function CalendarView({ currentUser, calendarId, calendarSlug, postToOpen
 
   const { posts = [], isLoading, createPost, updatePost, deletePost } = usePosts(calendarId)
 
-  // 1. Set the page context when editor closes or when month changes (for RAG)
-  // The AppLayout already calculates the base page from location
-  // We only need to update when editor state or month changes
   useEffect(() => {
     if (!isEditorOpen) {
-      // Clear any override and set back to calendar with current month
       setClientContext("calendar", {
         currentMonth: currentDate.getMonth(),
         currentYear: currentDate.getFullYear(),
@@ -84,16 +79,13 @@ export function CalendarView({ currentUser, calendarId, calendarSlug, postToOpen
       comments: [],
     }
     
-    // Save the post immediately so it has a real ID
     try {
       const { id: _id, ...postWithoutId } = newPost
       const savedPost = await createPost.mutateAsync(postWithoutId)
       setSelectedPost(savedPost)
       setIsEditorOpen(true)
-      // Set context with the real post ID
       setClientContext("postEditor", { postId: savedPost.id })
     } catch (error) {
-      // If save fails, still open editor with temp ID
       console.error("Failed to save post immediately:", error)
       setSelectedPost(newPost)
       setIsEditorOpen(true)
@@ -104,7 +96,6 @@ export function CalendarView({ currentUser, calendarId, calendarSlug, postToOpen
   const handleEditPost = (post: Post) => {
     setSelectedPost(post)
     setIsEditorOpen(true)
-    // 2. Set context to "postEditor" when modal opens
     setClientContext("postEditor", { postId: post.id })
   }
 
@@ -113,7 +104,6 @@ export function CalendarView({ currentUser, calendarId, calendarSlug, postToOpen
       await updatePost.mutateAsync(post)
       setSelectedPost(post)
     } else {
-      // For new posts, omit the id field
       const { id: _id, ...postWithoutId } = post
       const newPost = await createPost.mutateAsync(postWithoutId)
       setSelectedPost(newPost)
@@ -129,14 +119,12 @@ export function CalendarView({ currentUser, calendarId, calendarSlug, postToOpen
   const handleCloseEditor = () => {
     setIsEditorOpen(false)
     setSelectedPost(null)
-    // 3. Revert context back to "calendar" when modal closes
     setClientContext("calendar", {
       currentMonth: currentDate.getMonth(),
       currentYear: currentDate.getFullYear(),
     })
   }
 
-  // Listen for create-post events from AI chat
   useAppEvent<{ date: string }>(
     AppEvents.CREATE_POST,
     (event) => {
@@ -146,7 +134,6 @@ export function CalendarView({ currentUser, calendarId, calendarSlug, postToOpen
     [],
   )
 
-  // Listen for open-post events from AI chat
   useAppEvent<{ postId: string }>(
     AppEvents.OPEN_POST,
     (event) => {

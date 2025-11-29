@@ -9,7 +9,6 @@ type Variables = {
 
 const app = new Hono<{ Variables: Variables }>()
 
-// Middleware to load and validate user
 app.use('*', requireAuth)
 
 function mapPostToResponse(post: any) {
@@ -53,7 +52,7 @@ app.get("/", async (c) => {
     .order("date", { ascending: true })
 
   if (error) {
-    console.error("[v0] Error fetching posts:", error)
+    console.error("Error fetching posts:", error)
     return c.json({ error: error.message }, 500)
   }
 
@@ -95,7 +94,7 @@ app.post("/", async (c) => {
     .single()
 
   if (error) {
-    console.error("[v0] Error creating post:", error)
+    console.error("Error creating post:", error)
     return c.json({ error: error.message }, 500)
   }
 
@@ -139,7 +138,7 @@ app.put("/", async (c) => {
     .single()
 
   if (error) {
-    console.error("[v0] Error updating post:", error)
+    console.error("Error updating post:", error)
     return c.json({ error: error.message }, 500)
   }
 
@@ -168,7 +167,7 @@ app.delete("/", async (c) => {
   const { error } = await supabase.from("posts").delete().eq("id", id).eq("calendar_id", calendarId)
 
   if (error) {
-    console.error("[v0] Error deleting post:", error)
+    console.error("Error deleting post:", error)
     return c.json({ error: error.message }, 500)
   }
 

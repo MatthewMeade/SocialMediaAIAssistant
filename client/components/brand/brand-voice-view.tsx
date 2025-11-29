@@ -75,22 +75,19 @@ export function BrandVoiceView({ calendarId }: BrandVoiceViewProps) {
   const handleImportRules = async (text: string) => {
     setIsImporting(true)
     try {
-      // 1. Extract rules via AI
       const result = await extractRules.mutateAsync(text)
 
       if (result.rules && result.rules.length > 0) {
-        // 2. Save to DB
         await createBrandRulesBulk.mutateAsync(result.rules)
         setShowImportDialog(false)
       }
     } catch (error) {
-      console.error("Failed to import rules", error)
+      console.error("Failed to import rules:", error)
     } finally {
       setIsImporting(false)
     }
   }
 
-  // Mutation for generating captions
   const { mutate: generateCaption } = useMutation({
     mutationFn: async (data: { 
       request: { topic: string; keywords: string[]; tone: string }
@@ -111,7 +108,6 @@ export function BrandVoiceView({ calendarId }: BrandVoiceViewProps) {
       abortControllerRef.current = null
     },
     onError: (error) => {
-      // Don't log errors for aborted requests
       const isAborted = 
         (error instanceof Error && error.name === "AbortError") ||
         (error instanceof DOMException && error.name === "AbortError") ||
@@ -126,12 +122,10 @@ export function BrandVoiceView({ calendarId }: BrandVoiceViewProps) {
   })
 
   const handleGenerateExamplePost = () => {
-    // Cancel any in-flight request
     if (abortControllerRef.current) {
       abortControllerRef.current.abort()
     }
 
-    // Create new AbortController for this request
     const abortController = new AbortController()
     abortControllerRef.current = abortController
 
@@ -146,10 +140,8 @@ export function BrandVoiceView({ calendarId }: BrandVoiceViewProps) {
     })
   }
 
-  // Create a dependency string that tracks enabled rules' content
   const enabledRulesKey = useMemo(() => {
     const enabledRules = brandRules.filter((r) => r.enabled)
-    // Sort by ID to ensure consistent ordering (important for JSON.stringify comparison)
     const sortedRules = [...enabledRules].sort((a, b) => a.id.localeCompare(b.id))
     return JSON.stringify(
       sortedRules.map((r) => ({
@@ -161,20 +153,16 @@ export function BrandVoiceView({ calendarId }: BrandVoiceViewProps) {
     )
   }, [brandRules])
 
-  // Track the count of enabled rules separately to catch additions/deletions
   const enabledRulesCount = useMemo(() => {
     return brandRules.filter((r) => r.enabled).length
   }, [brandRules])
 
-  // Auto-generate caption when component loads or when brand rules change
   useEffect(() => {
     if (!isLoading && brandRules.length > 0 && brandRules.some((r) => r.enabled)) {
-      // Cancel any in-flight request
       if (abortControllerRef.current) {
         abortControllerRef.current.abort()
       }
 
-      // Create new AbortController for this request
       const abortController = new AbortController()
       abortControllerRef.current = abortController
 
@@ -189,7 +177,6 @@ export function BrandVoiceView({ calendarId }: BrandVoiceViewProps) {
       })
     }
 
-    // Cleanup: cancel request on unmount
     return () => {
       if (abortControllerRef.current) {
         abortControllerRef.current.abort()

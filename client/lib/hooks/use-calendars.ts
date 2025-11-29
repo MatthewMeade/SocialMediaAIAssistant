@@ -1,14 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
-
 import type { Calendar } from "@/lib/types"
-
 import { apiGet, apiPost } from "@/lib/api-client"
-
 import { ApiRoutes } from "@/lib/api-routes"
-
-
-
-// The API returns dates as strings
 
 type ApiCalendar = Omit<Calendar, "createdAt"> & { createdAt: string }
 
@@ -27,8 +20,6 @@ export function useCalendars() {
     queryFn: async () => {
 
       const calendars = await apiGet<ApiCalendar[]>(ApiRoutes.CALENDARS)
-
-      // Parse date strings into Date objects
 
       return calendars.map((c) => ({
 
@@ -63,15 +54,8 @@ export function useCalendars() {
     },
 
     onSuccess: (newCalendar) => {
-
-      // Add to the local cache immediately
-
       queryClient.setQueryData<Calendar[]>(["calendars"], (old = []) => [...old, newCalendar])
-
-      // Invalidate to ensure consistency, though setQueryData provides a good optimistic update
-
       queryClient.invalidateQueries({ queryKey: ["calendars"] })
-
     },
 
   })

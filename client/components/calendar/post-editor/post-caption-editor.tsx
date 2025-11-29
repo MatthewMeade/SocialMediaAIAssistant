@@ -11,12 +11,11 @@ export function PostCaptionEditor({
   caption,
   onCaptionChange,
 }: PostCaptionEditorProps) {
-  // Logic to determine the prompt
   const getAIPrompt = () => {
     if (caption && caption.trim().length > 0) {
-      return "Help me edit this post. Here is the current content: " + caption;
+      return "Help me edit this post";
     }
-    return "Help me create a caption for this post.";
+    return "Help me create a caption for this post";
   };
 
   return (
@@ -34,7 +33,7 @@ export function PostCaptionEditor({
         <div className="absolute bottom-2 right-2">
           <AITriggerButton 
             message={getAIPrompt}
-            shouldClear={false} // Keep context if they were already chatting
+            shouldClear={false}
             className="h-8 w-8"
           />
         </div>
