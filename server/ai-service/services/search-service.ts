@@ -7,7 +7,7 @@ import { langfuseHandler } from "../../../server/lib/langfuse";
 
 const formatHistory = (history: BaseMessage[]): string => {
     return history
-        .slice(-4)
+        // .slice(-4)
         .map(msg => `${msg.name}: ${msg.content}`)
         .join("\n");
 };

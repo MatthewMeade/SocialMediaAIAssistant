@@ -117,7 +117,8 @@ export class ToolService {
     return tool(
       async (
         input: {
-          topic: string
+          topic?: string
+          details?: string[]
           existingCaption?: string
         },
         runtime: ToolRuntime<{}, typeof toolContextSchema>,
@@ -133,6 +134,7 @@ export class ToolService {
           const result = await generateCaptions(
             {
               topic: input.topic,
+              details: input.details || [],
               existingCaption: input.existingCaption,
             },
             brandRules,
@@ -152,9 +154,15 @@ export class ToolService {
       {
         name: 'generate_caption',
         description:
-          'Generates a new post caption or refines an existing one based on brand voice rules. Returns the caption, score, and suggestions.',
+          'Generates a new post caption or refines an existing one based on brand voice rules. Returns the caption, score, and suggestions. Provide detailed information about what the caption should include in the details array.',
         schema: z.object({
-          topic: z.string().describe('The main topic of the post'),
+          topic: z
+            .string()
+            .optional()
+            .describe('The main topic of the post (deprecated, prefer using details array)'),
+          details: z
+            .array(z.string())
+            .describe('A list of specific details that the post caption should include. This should include user-requested information and relevant context from RAG steps. Each detail should be a specific piece of information the caption must incorporate.'),
           existingCaption: z
             .string()
             .optional()

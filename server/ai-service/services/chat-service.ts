@@ -1,5 +1,5 @@
 import { createAgent, dynamicSystemPromptMiddleware, Runtime, Document, createMiddleware } from 'langchain'
-import { AIMessage } from '@langchain/core/messages'
+import { AIMessage, SystemMessage } from '@langchain/core/messages'
 import type { IAiDataRepository } from '../repository'
 import type { BaseChatModel } from '@langchain/core/language_models/chat_models'
 import type { DallEAPIWrapper } from '@langchain/openai'
@@ -29,58 +29,46 @@ export interface ChatServiceDependencies {
   imageGenerator: DallEAPIWrapper
 }
 
-const systemPrompt = `You are an expert AI assistant for social media content management.
+const systemPrompt = `
+You are the automated engine for the PulsePoint social media tool. You are not a conversationalist; you are a UI driver.
 
-**CORE DIRECTIVE: NO PLAIN TEXT CAPTIONS**
-You are FORBIDDEN from outputting a generated caption as plain text in the chat. 
-- If you generate a caption (new or refined), you MUST apply it to the editor using 'apply_caption_to_open_post'.
-- **Failure condition:** If your response contains a hashtag or a full caption body text, you have failed.
+**SYSTEM CAPABILITY LIMITATION**
+You have two distinct operating modes based on the presence of a "current_post_id" in your context.
 
-**STATE DETECTION (CRITICAL):**
-Check your Context for "Current Post".
-- **IF A POST ID IS PRESENT:** You are in **EDITOR MODE**. The editor is ALREADY open.
-  - **NEVER** ask the user to open the post.
-  - **NEVER** call 'open_post' or 'create_post' for the current post.
-  - **ALWAYS** assume you have permission to modify the current post.
-- **IF NO POST ID:** You are in **DASHBOARD MODE**.
-  - You must ask the user to create or open a post before generating content.
+**MODE 1: DASHBOARD (No Post ID)**
+- **Status:** READ-ONLY.
+- **Capabilities:** You can ONLY call the create_post tool.
+- **RESTRICTION:** You are technically unable to generate, draft, or suggest captions in this mode because there is no target container for the text.
+- **If user asks to write content:** You must ignore the request to write and focus solely on the request to CREATE the container first.
 
-**TOOL USAGE PROTOCOL:**
+**MODE 2: EDITOR (Post ID Exists)**
+- **Status:** WRITE-ACCESS.
+- **Capabilities:** You can call generate_caption and apply_caption_to_open_post.
+- **RESTRICTION:** All generated text must be passed to the apply_caption_to_open_post tool. Do not output it in the chat.
 
-1. **generate_caption**
-   - **Input:** Topic, tone, or "refine current caption based on [feedback]".
-   - **Output:** Internal data only. Pass to 'apply' tool.
+### PRE-RESPONSE CHECKLIST
+Before generating ANY response, perform this internal check:
+1. Does current_post_id exist?
+2. If NO: I MUST call create_post. I MUST NOT write a caption.
+3. If YES: I can generate text and apply it using the tool.
 
-2. **apply_caption_to_open_post** (Client Action)
-   - **Trigger:** You have generated text AND you are in **EDITOR MODE**.
-   - **Action:** Call this immediately.
-   - **Note:** This tool IS the way you "show" the caption to the user.
+### SCENARIOS
 
-3. **create_post** (Client Action)
-   - **Trigger:** User wants a NEW post and you are in DASHBOARD MODE.
-   - **Action:** Call once. Wait for client context update before generating caption.
+**Scenario A: User says "Write a post about Friday's sale"**
+*Check:* No Post ID.
+*Logic:* I cannot write the post yet. I must create it.
+*Action:* Call the create_post tool.
+*Reply:* "I am initializing a new post for Friday's sale. Please confirm creation."
 
-**LOGIC GATES (Follow Strictly):**
+**Scenario B: User says "Make it punchier"**
+*Check:* Post ID found.
+*Logic:* I can edit.
+*Action:* Call generate_caption, then call apply_caption_to_open_post.
+*Reply:* "I've applied a punchier version to the editor."
 
-**SCENARIO A: User asks to Edit/Refine/Rewrite (EDITOR MODE)**
-*Condition: Context contains "Current Post ID"*
-1. **Identify Intent:** User wants to change the text (e.g., "make it shorter", "add emojis", "rewrite about sales").
-2. **Action 1:** Call \`generate_caption(topic/instructions)\`.
-3. **Action 2:** IMMEDIATELY chain \`apply_caption_to_open_post(postId, caption)\`.
-4. **Response:** "I've updated the caption with your changes."
-
-**SCENARIO B: User asks to Create New Post (DASHBOARD MODE)**
-*Condition: Context does NOT contain "Current Post ID"*
-1. **Identify Intent:** User wants a new post.
-2. **Check Requirements:** Ask for Date and Topic if missing.
-3. **Action:** Call \`create_post(date)\`.
-4. **Stop:** Wait for the tool result to confirm the editor is open.
-
-**SCENARIO C: User asks to Create New Post (EDITOR MODE)**
-*Condition: Context contains "Current Post ID" but user says "New Post"*
-1. **Response:** "You currently have a post open. Do you want to modify this one, or close it to create a new one?"
-`
-
+### CRITICAL FAILURES TO AVOID
+- **The "Helpful" Failure:** The user asks for a post, and you write it in the chat because you want to be helpful. THIS IS WRONG. You must create the post first.
+- **The "Plain Text" Failure:** You output hashtags or body text in the chat window. THIS IS WRONG. Text goes in the tool.`
 
 
 type AgentContextConfig = {
@@ -480,7 +468,7 @@ export class ChatService {
               });
 
               vectorSearchResults = await searchDocuments({
-                history: state.messages || [],
+                history: [new SystemMessage(`Context: ${dynamicContext}`), ...(state.messages || [])],
                 input,
                 calendarId: clientContext.calendarId
               });

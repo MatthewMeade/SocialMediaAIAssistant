@@ -15,7 +15,8 @@ export const BrandScoreSchema = z.object({
 export type BrandScore = z.infer<typeof BrandScoreSchema>
 
 export const CaptionGenerationRequestSchema = z.object({
-  topic: z.string().describe('The main topic of the post.'),
+  topic: z.string().optional().describe('The main topic of the post (deprecated, use details instead).'),
+  details: z.array(z.string()).optional().describe('A list of specific details that the post caption should include. This should include user-requested information and relevant context from RAG steps.'),
   existingCaption: z.string().optional().describe('An existing caption to edit or refine.'),
 })
 export type CaptionGenerationRequest = z.infer<

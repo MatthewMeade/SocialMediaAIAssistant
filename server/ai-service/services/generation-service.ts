@@ -54,8 +54,18 @@ export async function generateCaptions(
     const generationChain = generationPromptTemplate.pipe(creativeModel)
 
     const rulesForPrompt = rulesString || "No specific brand voice rules are currently active."
+
+    // Format details array into a readable string
+    const detailsString = request.details && request.details.length > 0
+      ? request.details.map((detail) => `- ${detail}`).join('\n')
+      : ''
+
+    // Use details if available, otherwise fall back to topic for backward compatibility
+    const topicOrDetails = detailsString || request.topic || ''
+
     const result = await generationChain.invoke({
-      topic: request.topic,
+      topic: topicOrDetails,
+      details: detailsString,
       rules: rulesForPrompt,
     }, { callbacks: [langfuseHandler] })
 
